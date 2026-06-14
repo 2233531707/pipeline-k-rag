@@ -1,0 +1,91 @@
+/* ===== 统一设计 Token — 基于 ui_template.html 视觉参考 ===== */
+:root {
+  /* -------- 品牌色 -------- */
+  --brand-900: #063b8f;
+  --brand-800: #064cac;
+  --brand-700: #0758c9;
+  --brand-600: #0b6fe8;
+  --brand-500: #1685ff;
+  --brand-300: #79b8ff;
+  --brand-200: #b8d9ff;
+  --brand-100: #d9eaff;
+  --brand-50: #eaf4ff;
+  --brand-25: #f5f9ff;
+
+  --color-primary: var(--brand-600);
+  --color-primary-hover: var(--brand-700);
+  --color-primary-light: var(--brand-50);
+
+  /* -------- 背景色 -------- */
+  --color-bg-page: #f6f8fc;
+  --color-bg-sidebar: #ffffff;
+  --color-bg-card: #ffffff;
+
+  /* -------- 文字色 -------- */
+  --color-text-primary: #162033;
+  --color-text-secondary: #637089;
+  --color-text-tertiary: #8b96aa;
+
+  /* -------- 边框色 -------- */
+  --color-border: #e7edf5;
+
+  /* -------- 语义色 -------- */
+  --color-success: #0f9f6e;
+  --color-warning: #c97a05;
+  --color-danger: #d43a43;
+
+  /* -------- 圆角 -------- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  /* -------- 阴影 -------- */
+  --shadow-card: 0 1px 3px rgba(26, 45, 78, 0.07);
+  --shadow-dialog: 0 10px 24px rgba(26, 45, 78, 0.10);
+
+  /* -------- 布局 -------- */
+  --sidebar-width: 252px;
+  --sidebar-collapsed-width: 66px;
+  --header-height: 58px;
+
+  /* -------- 兼容现有页面的主色变量 -------- */
+  --main-1000: #031c43;
+  --main-900: var(--brand-900);
+  --main-800: var(--brand-800);
+  --main-700: var(--brand-700);
+  --main-600: var(--brand-600);
+  --main-500: var(--brand-500);
+  --main-400: #4b9eff;
+  --main-300: var(--brand-300);
+  --main-200: var(--brand-200);
+  --main-100: var(--brand-100);
+  --main-50: var(--brand-50);
+  --main-40: #edf5ff;
+  --main-30: var(--brand-25);
+  --main-20: #f8fbff;
+  --main-10: #fbfdff;
+  --main-5: #ffffff;
+  --main-color: var(--brand-600);
+  --main-bright: var(--brand-500);
+  --bg-sider: var(--color-bg-sidebar);
+
+  --gray-1000: var(--color-text-primary);
+  --gray-900: #263249;
+  --gray-800: #3c4860;
+  --gray-700: #4f5d75;
+  --gray-600: var(--color-text-secondary);
+  --gray-500: #7c879b;
+  --gray-400: var(--color-text-tertiary);
+  --gray-300: #cbd3df;
+  --gray-200: #dbe2ec;
+  --gray-150: var(--color-border);
+  --gray-100: #edf1f6;
+  --gray-50: #f3f6fa;
+  --gray-25: var(--color-bg-page);
+  --gray-10: #fafbfd;
+
+  --color-bg-container: var(--color-bg-card);
+  --color-bg-elevated: var(--color-bg-card);
+  --color-text: var(--color-text-primary);
+  --color-text-secondary: #637089;
+}

@@ -1,0 +1,22 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- circular badge -->
+  <circle cx="64" cy="64" r="58" fill="#1769D2"/>
+
+  <!-- simple database stack -->
+  <ellipse cx="64" cy="36" rx="24" ry="8" fill="#FFFFFF"/>
+  <path d="M40 36V53C40 57.4 50.7 61 64 61C77.3 61 88 57.4 88 53V36" fill="#FFFFFF"/>
+  <path d="M40 52V69C40 73.4 50.7 77 64 77C77.3 77 88 73.4 88 69V52" fill="#FFFFFF"/>
+  <path d="M40 36C40 40.4 50.7 44 64 44C77.3 44 88 40.4 88 36" stroke="#1769D2" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 52C40 56.4 50.7 60 64 60C77.3 60 88 56.4 88 52" stroke="#1769D2" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 68C40 72.4 50.7 76 64 76C77.3 76 88 72.4 88 68" stroke="#1769D2" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 36V68" stroke="#1769D2" stroke-width="4" stroke-linecap="round"/>
+  <path d="M88 36V68" stroke="#1769D2" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- compact underground pipeline symbol -->
+  <path d="M64 77V91" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <path d="M64 91H42C37.6 91 34 94.6 34 99V105" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M64 91H86C90.4 91 94 94.6 94 99V105" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="64" cy="91" r="8" fill="#FFFFFF" stroke="#1769D2" stroke-width="4"/>
+  <circle cx="34" cy="105" r="5" fill="#FFFFFF"/>
+  <circle cx="94" cy="105" r="5" fill="#FFFFFF"/>
+</svg>

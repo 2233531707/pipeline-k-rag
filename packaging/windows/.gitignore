@@ -1,0 +1,10 @@
+.build-venv/
+.pyinstaller/
+.inno/
+.cache/
+build/
+dist/
+bundle/app/
+bundle/images/*.tar
+!bundle/images/.gitkeep
+__pycache__/

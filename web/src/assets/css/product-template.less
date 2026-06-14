@@ -1,0 +1,73 @@
+body {
+  color: var(--color-text-primary);
+  background: var(--color-bg-page);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.ant-btn {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.ant-btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.ant-btn-primary:not(:disabled):hover,
+.ant-btn-primary:not(:disabled):focus {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select-selector,
+.ant-picker {
+  border-radius: var(--radius-sm) !important;
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-input-number:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.ant-picker:hover {
+  border-color: var(--brand-300) !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent) !important;
+}
+
+.ant-card,
+.ant-modal-content,
+.ant-drawer-content {
+  border-radius: var(--radius-md);
+}
+
+.ant-card {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+.ant-table-wrapper .ant-table {
+  color: var(--color-text-primary);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: var(--gray-50);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}

@@ -1,0 +1,102 @@
+# GitHub Actions workflow for backend and frontend quality checks
+# 自动运行后端 Ruff 检查与前端 lint/build
+#
+# 触发条件：
+# 1. Push 到 main 或 main2.0 分支时运行
+# 2. 面向 main 或 main2.0 的 Pull Request 时运行
+
+name: Code Quality Checks
+
+on:
+  push:
+    branches:
+      - main
+      - main2.0
+    paths:
+      - 'backend/**/*.py'
+      - 'backend/pyproject.toml'
+      - 'web/**'
+      - 'Makefile'
+      - '.github/workflows/ruff.yml'
+  pull_request:
+    branches:
+      - main
+      - main2.0
+    paths:
+      - 'backend/**/*.py'
+      - 'backend/pyproject.toml'
+      - 'web/**'
+      - 'Makefile'
+      - '.github/workflows/ruff.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    name: Ruff Format & Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 安装 uv（项目使用 uv 作为包管理器）
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.7.2"
+
+      # 3. 设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 4. 安装 ruff 依赖（根据项目配置，ruff 在 dev 依赖组中）
+      - name: Install dependencies
+        run: |
+          uv sync --group dev
+
+      # 5. 运行 Ruff 检查（只检查，不在 CI 中修改源码）
+      - name: Run Ruff checks
+        run: |
+          uv run python -m ruff check package
+          uv run python -m ruff format package --check
+
+  web:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.11.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm exec eslint .
+
+      - name: Build frontend
+        run: pnpm build

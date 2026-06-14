@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>工程知识智能体平台 - UI 参考模板</title>
+  <style>
+    :root {
+      --brand-700: #0758c9;
+      --brand-600: #0b6fe8;
+      --brand-500: #1685ff;
+      --brand-100: #eaf4ff;
+      --brand-050: #f5faff;
+      --cyan-500: #19b7c9;
+      --green-600: #0f9f6e;
+      --green-100: #e7f8f1;
+      --amber-600: #c97a05;
+      --amber-100: #fff5dc;
+      --red-600: #d43a43;
+      --red-100: #ffeaec;
+      --ink-900: #162033;
+      --ink-800: #23304a;
+      --ink-700: #44516b;
+      --ink-600: #637089;
+      --ink-500: #8290a7;
+      --line-300: #d9e2ef;
+      --line-200: #e7edf5;
+      --line-100: #f0f4f9;
+      --bg: #f6f8fc;
+      --panel: #ffffff;
+      --shadow-sm: 0 1px 3px rgba(26, 45, 78, 0.07);
+      --shadow-md: 0 10px 24px rgba(26, 45, 78, 0.10);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --sidebar: 252px;
+      --header: 58px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: var(--font); color: var(--ink-900); background: var(--bg); }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    a { color: inherit; text-decoration: none; }
+    .hidden { display: none !important; }
+
+    /* ---------- reusable atoms ---------- */
+    .icon { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .muted { color: var(--ink-600); }
+    .subtle { color: var(--ink-500); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .card { background: var(--panel); border: 1px solid var(--line-200); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    .btn { height: 38px; border-radius: 8px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; font-size: 14px; font-weight: 600; transition: .18s ease; }
+    .btn-primary { background: var(--brand-600); color: #fff; }
+    .btn-primary:hover { background: var(--brand-700); }
+    .btn-secondary { background: #fff; color: var(--ink-800); border-color: var(--line-300); }
+    .btn-secondary:hover { border-color: #b9c9df; background: #fbfdff; }
+    .btn-ghost { color: var(--ink-700); background: transparent; }
+    .btn-ghost:hover { background: var(--line-100); color: var(--ink-900); }
+    .btn-danger { color: var(--red-600); background: #fff; border-color: #f2c9ce; }
+    .btn-danger:hover { background: var(--red-100); }
+    .btn-sm { height: 32px; padding: 0 10px; font-size: 13px; }
+    .status { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .status.ok { color: var(--green-600); background: var(--green-100); }
+    .status.info { color: var(--brand-600); background: var(--brand-100); }
+    .status.warn { color: var(--amber-600); background: var(--amber-100); }
+    .status.danger { color: var(--red-600); background: var(--red-100); }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--line-300); border-radius: 999px; background: #fff; color: var(--ink-700); font-size: 12px; }
+    .chip.active { color: var(--brand-700); border-color: #b8d8ff; background: var(--brand-050); }
+    .field { display: grid; gap: 7px; }
+    .field label { font-size: 13px; font-weight: 600; color: var(--ink-700); }
+    .field input, .field textarea, .selectlike { width: 100%; min-height: 40px; border: 1px solid var(--line-300); border-radius: 8px; padding: 9px 11px; background: #fff; color: var(--ink-900); outline: none; transition: .16s ease; }
+    .field input:focus, .field textarea:focus, .selectlike:focus { border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(22,133,255,.12); }
+    .field-hint { color: var(--ink-500); font-size: 12px; line-height: 1.5; }
+    .divider { height: 1px; background: var(--line-200); }
+
+    /* ---------- login ---------- */
+    .login-page { height: 100vh; display: grid; grid-template-columns: minmax(0, 61.8fr) minmax(420px, 38.2fr); background: #eff5fd; }
+    .login-visual { position: relative; overflow: hidden; background: radial-gradient(circle at 32% 22%, rgba(44,147,255,.38), transparent 30%), radial-gradient(circle at 80% 76%, rgba(16,185,193,.2), transparent 26%), linear-gradient(145deg, #0a2d62, #0c448a 55%, #072656); color: #fff; padding: 42px; display: flex; flex-direction: column; justify-content: space-between; }
+    .login-grid { position: absolute; inset: 0; opacity: .18; background-image: linear-gradient(rgba(255,255,255,.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.15) 1px, transparent 1px); background-size: 34px 34px; }
+    .login-orb { position: absolute; border-radius: 50%; filter: blur(2px); opacity: .35; }
+    .login-orb.a { width: 420px; height: 420px; left: -120px; bottom: -140px; background: #17b2d0; }
+    .login-orb.b { width: 310px; height: 310px; right: -80px; top: 80px; background: #2585ff; }
+    .login-brand, .login-hero, .login-meta { position: relative; z-index: 2; }
+    .brand-lockup { display: flex; align-items: center; gap: 12px; }
+    .brand-mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: linear-gradient(135deg, #78c6ff, #1ec2bd); color: #07366e; font-weight: 800; box-shadow: 0 10px 22px rgba(0,0,0,.15); }
+    .brand-lockup strong { display: block; font-size: 17px; letter-spacing: .3px; }
+    .brand-lockup span { display: block; margin-top: 2px; font-size: 12px; color: rgba(255,255,255,.72); }
+    .login-hero { display: grid; grid-template-columns: minmax(0, 1fr) 420px; align-items: center; gap: 20px; }
+    .login-copy h1 { margin: 0; font-size: clamp(32px, 4vw, 56px); line-height: 1.12; letter-spacing: -1.4px; max-width: 640px; }
+    .login-copy p { margin: 18px 0 0; max-width: 590px; color: rgba(255,255,255,.76); line-height: 1.8; font-size: 15px; }
+    .hero-diagram { width: 100%; max-width: 430px; height: 360px; opacity: .98; }
+    .login-meta { display: flex; gap: 18px; font-size: 12px; color: rgba(255,255,255,.64); }
+    .login-panel { background: #fff; display: flex; align-items: center; justify-content: center; padding: 42px; box-shadow: -18px 0 40px rgba(7, 30, 74, .13); z-index: 3; }
+    .login-form { width: min(100%, 380px); }
+    .login-form h2 { margin: 0; font-size: 25px; letter-spacing: -.4px; }
+    .login-form > p { margin: 9px 0 25px; color: var(--ink-600); font-size: 14px; line-height: 1.65; }
+    .login-form .field { margin-bottom: 17px; }
+    .login-options { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 20px; color: var(--ink-600); font-size: 13px; }
+    .login-options label { display: flex; align-items: center; gap: 7px; }
+    .login-options a { color: var(--brand-600); font-weight: 600; }
+    .login-footer { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line-200); font-size: 12px; color: var(--ink-500); line-height: 1.6; }
+
+    /* ---------- application shell ---------- */
+    .app { height: 100vh; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); overflow: hidden; background: var(--bg); }
+    .sidebar { background: #fff; border-right: 1px solid var(--line-200); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-head { height: var(--header); display: flex; align-items: center; gap: 9px; padding: 0 16px; border-bottom: 1px solid var(--line-200); }
+    .sidebar-head .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 13px; box-shadow: none; }
+    .sidebar-title { min-width: 0; }
+    .sidebar-title strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-title span { display: block; margin-top: 1px; font-size: 11px; color: var(--ink-500); }
+    .new-chat-wrap { padding: 13px 12px 10px; }
+    .new-chat { width: 100%; }
+    .nav-scroll { padding: 2px 8px 12px; overflow-y: auto; flex: 1; }
+    .nav-group-title { margin: 15px 8px 7px; font-size: 11px; color: var(--ink-500); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
+    .nav-item { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 10px; margin: 2px 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink-700); font-size: 13px; text-align: left; transition: .16s ease; }
+    .nav-item:hover { background: var(--line-100); color: var(--ink-900); }
+    .nav-item.active { color: var(--brand-700); background: var(--brand-100); font-weight: 700; }
+    .nav-count { margin-left: auto; color: var(--ink-500); font-size: 11px; }
+    .conversation-list { margin-top: 6px; }
+    .conversation { display: block; width: 100%; border: 0; background: transparent; padding: 8px 9px; border-radius: 7px; text-align: left; color: var(--ink-700); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conversation:hover { background: var(--line-100); }
+    .conversation.active { background: #f4f8fe; color: var(--ink-900); font-weight: 600; }
+    .sidebar-foot { border-top: 1px solid var(--line-200); padding: 10px; }
+    .user-card { display: flex; align-items: center; gap: 9px; padding: 7px; border-radius: 8px; }
+    .user-card:hover { background: var(--line-100); }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(145deg, #d9edff, #e9f8f4); color: var(--brand-700); font-size: 12px; font-weight: 800; }
+    .user-meta { min-width: 0; flex: 1; }
+    .user-meta strong { display: block; font-size: 13px; }
+    .user-meta span { display: block; margin-top: 1px; color: var(--ink-500); font-size: 11px; }
+
+    .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .topbar { height: var(--header); background: #fff; border-bottom: 1px solid var(--line-200); display: flex; align-items: center; justify-content: space-between; padding: 0 19px; }
+    .crumbs { display: flex; align-items: center; gap: 8px; color: var(--ink-500); font-size: 13px; }
+    .crumbs strong { color: var(--ink-900); }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .top-icon { width: 34px; height: 34px; border: 0; display: grid; place-items: center; border-radius: 8px; color: var(--ink-600); background: transparent; }
+    .top-icon:hover { background: var(--line-100); color: var(--ink-900); }
+    .screen { flex: 1; min-height: 0; overflow: auto; padding: 18px; }
+    .view { display: none; min-height: 100%; }
+    .view.active { display: block; }
+    .view-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 16px; }
+    .view-title h1 { margin: 0; font-size: 22px; letter-spacing: -.25px; }
+    .view-title p { margin: 6px 0 0; color: var(--ink-600); font-size: 13px; line-height: 1.6; }
+    .view-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+    /* ---------- chat ---------- */
+    .chat-view { height: calc(100vh - var(--header) - 36px); min-height: 620px; display: grid; grid-template-columns: minmax(0, 1fr) 286px; gap: 14px; }
+    .chat-card { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .chat-head { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 15px; border-bottom: 1px solid var(--line-200); }
+    .agent-switch { display: flex; align-items: center; gap: 9px; }
+    .agent-avatar { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--brand-600), var(--cyan-500)); font-size: 12px; font-weight: 800; }
+    .agent-switch strong { display: block; font-size: 14px; }
+    .agent-switch span { display: block; color: var(--ink-500); font-size: 11px; margin-top: 1px; }
+    .chat-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px min(5vw, 52px) 12px; }
+    .message { display: flex; gap: 10px; margin: 0 auto 17px; max-width: 900px; }
+    .message.me { justify-content: flex-end; }
+    .msg-avatar { width: 29px; height: 29px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; color: var(--brand-700); background: var(--brand-100); font-size: 12px; font-weight: 800; }
+    .message.me .msg-avatar { order: 2; color: var(--ink-700); background: #eef2f7; }
+    .bubble { max-width: 80%; border-radius: 12px; padding: 11px 13px; font-size: 14px; line-height: 1.72; color: var(--ink-800); background: #fff; border: 1px solid var(--line-200); }
+    .message.me .bubble { background: var(--brand-100); border-color: #d3e8ff; }
+    .tool-card { max-width: 900px; margin: 0 auto 17px; border: 1px solid var(--line-200); background: #fff; border-radius: 12px; overflow: hidden; }
+    .tool-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; background: #fbfdff; border-bottom: 1px solid var(--line-200); }
+    .tool-title { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700; color: var(--ink-800); }
+    .tool-body { padding: 13px 14px; }
+    .graph-summary { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-bottom: 11px; }
+    .mini-stat { border: 1px solid var(--line-200); border-radius: 9px; padding: 10px; }
+    .mini-stat span { display: block; color: var(--ink-500); font-size: 11px; }
+    .mini-stat strong { display: block; margin-top: 3px; font-size: 17px; }
+    .relation-line { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-700); }
+    .entity { color: var(--brand-700); background: var(--brand-050); border: 1px solid #d7eaff; border-radius: 999px; padding: 4px 8px; }
+    .relation { color: var(--ink-500); }
+    .chat-compose { padding: 11px 14px 14px; border-top: 1px solid var(--line-200); background: #fff; }
+    .compose-box { border: 1px solid var(--line-300); border-radius: 12px; padding: 9px; transition: .16s ease; }
+    .compose-box:focus-within { border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(22,133,255,.10); }
+    .compose-box textarea { width: 100%; min-height: 52px; max-height: 140px; resize: vertical; border: 0; outline: 0; padding: 4px 5px; color: var(--ink-900); }
+    .compose-foot { border-top: 1px solid var(--line-100); display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; }
+    .compose-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+    .context-side { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .context-head { padding: 13px 14px; border-bottom: 1px solid var(--line-200); }
+    .context-head strong { display: block; font-size: 14px; }
+    .context-head span { display: block; margin-top: 3px; color: var(--ink-500); font-size: 12px; }
+    .context-body { padding: 12px; overflow-y: auto; display: grid; gap: 12px; }
+    .context-section h3 { margin: 0 0 8px; color: var(--ink-500); font-size: 11px; letter-spacing: .6px; text-transform: uppercase; }
+    .resource { display: flex; gap: 8px; padding: 9px; border: 1px solid var(--line-200); border-radius: 8px; background: #fff; }
+    .resource strong { display: block; font-size: 12px; }
+    .resource span { display: block; margin-top: 2px; color: var(--ink-500); font-size: 11px; line-height: 1.45; }
+
+    /* ---------- map tool ---------- */
+    .map-layout { display: grid; grid-template-columns: 152px minmax(0, 1fr) 218px; min-height: 300px; border: 1px solid var(--line-200); border-radius: 10px; overflow: hidden; }
+    .layer-panel, .feature-panel { background: #fbfdff; padding: 10px; }
+    .layer-panel { border-right: 1px solid var(--line-200); }
+    .feature-panel { border-left: 1px solid var(--line-200); }
+    .panel-label { color: var(--ink-500); font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 8px; }
+    .layer-toggle { display: flex; align-items: center; gap: 7px; margin: 8px 0; color: var(--ink-700); font-size: 12px; }
+    .swatch { width: 10px; height: 10px; border-radius: 3px; }
+    .map-stage { position: relative; background: #eaf2f7; overflow: hidden; }
+    .map-stage::before { content:""; position:absolute; inset:0; background-image: linear-gradient(rgba(101,133,157,.15) 1px, transparent 1px), linear-gradient(90deg, rgba(101,133,157,.15) 1px, transparent 1px); background-size: 27px 27px; }
+    .map-stage svg { position: relative; z-index: 2; width: 100%; height: 100%; min-height: 300px; }
+    .map-toolbar { position: absolute; z-index: 4; top: 9px; left: 9px; display: flex; gap: 5px; }
+    .map-control { width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line-300); border-radius: 6px; background: #fff; color: var(--ink-700); font-size: 14px; box-shadow: var(--shadow-sm); }
+    .map-feature { cursor: pointer; transition: .16s ease; }
+    .map-feature:hover { filter: brightness(.92); stroke-width: 5; }
+    .feature-panel dl { margin: 0; }
+    .feature-panel dt { margin-top: 9px; color: var(--ink-500); font-size: 11px; }
+    .feature-panel dd { margin: 3px 0 0; color: var(--ink-800); font-size: 12px; line-height: 1.45; word-break: break-word; }
+
+    /* ---------- page grids ---------- */
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+    .metric { padding: 15px; }
+    .metric-head { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-600); font-size: 12px; }
+    .metric strong { display: block; margin-top: 8px; font-size: 25px; letter-spacing: -.6px; }
+    .metric small { display: block; margin-top: 6px; color: var(--ink-500); font-size: 11px; }
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; margin-top: 14px; }
+    .panel { padding: 15px; }
+    .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+    .panel-title h2 { margin: 0; font-size: 15px; }
+    .panel-title span { color: var(--ink-500); font-size: 12px; }
+    .bar-row { margin: 13px 0; }
+    .bar-meta { display: flex; justify-content: space-between; gap: 9px; margin-bottom: 6px; color: var(--ink-700); font-size: 12px; }
+    .bar { height: 7px; border-radius: 99px; background: var(--line-100); overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-600), var(--cyan-500)); }
+    .table-card { overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 11px 13px; color: var(--ink-600); background: #fbfcfe; border-bottom: 1px solid var(--line-200); font-size: 12px; font-weight: 700; text-align: left; }
+    td { padding: 12px 13px; border-bottom: 1px solid var(--line-100); color: var(--ink-700); font-size: 13px; vertical-align: middle; }
+    tbody tr:hover { background: #fbfdff; }
+    .table-actions { display: flex; gap: 7px; justify-content: flex-end; }
+    .link-btn { border: 0; background: transparent; color: var(--brand-600); font-size: 12px; font-weight: 700; padding: 3px; }
+    .link-btn.danger { color: var(--red-600); }
+    .filter-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; flex-wrap: wrap; }
+    .searchbox { min-width: 250px; height: 38px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line-300); border-radius: 8px; padding: 0 10px; background: #fff; color: var(--ink-500); }
+    .searchbox input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink-900); }
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line-200); margin-bottom: 14px; }
+    .tab { border: 0; background: transparent; padding: 10px 12px; color: var(--ink-600); border-bottom: 2px solid transparent; font-size: 13px; font-weight: 700; }
+    .tab.active { color: var(--brand-700); border-bottom-color: var(--brand-600); }
+    .cards-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .extension-card { padding: 15px; }
+    .extension-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .extension-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--brand-700); background: var(--brand-100); }
+    .extension-card h3 { margin: 12px 0 5px; font-size: 15px; }
+    .extension-card p { min-height: 42px; margin: 0; color: var(--ink-600); font-size: 12px; line-height: 1.65; }
+    .extension-foot { display: flex; justify-content: space-between; align-items: center; gap: 9px; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line-100); }
+    .extension-foot span { color: var(--ink-500); font-size: 11px; }
+    .two-col { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; }
+    .list-panel { padding: 9px; }
+    .list-panel button { width: 100%; border: 0; border-radius: 8px; background: transparent; padding: 10px; text-align: left; color: var(--ink-700); }
+    .list-panel button:hover { background: var(--line-100); }
+    .list-panel button.active { color: var(--brand-700); background: var(--brand-100); font-weight: 700; }
+    .detail-panel { padding: 16px; }
+    .detail-panel h2 { margin: 0; font-size: 18px; }
+    .detail-panel p { color: var(--ink-600); font-size: 13px; line-height: 1.7; }
+    .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin-top: 15px; }
+    .sticky-actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 8px; margin: 18px -16px -16px; padding: 12px 16px; border-top: 1px solid var(--line-200); background: rgba(255,255,255,.94); backdrop-filter: blur(8px); }
+
+    /* ---------- modal + toast ---------- */
+    .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(15, 26, 45, .42); }
+    .modal { width: min(520px, 100%); overflow: hidden; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(14, 34, 67, .24); }
+    .modal-head { padding: 16px 18px; border-bottom: 1px solid var(--line-200); }
+    .modal-head h3 { margin: 0; font-size: 17px; }
+    .modal-head p { margin: 6px 0 0; color: var(--ink-600); font-size: 13px; line-height: 1.6; }
+    .modal-body { padding: 16px 18px; }
+    .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 18px; border-top: 1px solid var(--line-200); background: #fbfcfe; }
+    .toast-stack { position: fixed; z-index: 30; top: 14px; right: 14px; display: grid; gap: 8px; }
+    .toast { min-width: 250px; max-width: 380px; display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; border: 1px solid var(--line-200); border-radius: 10px; background: #fff; box-shadow: var(--shadow-md); color: var(--ink-700); font-size: 13px; line-height: 1.5; animation: toast-in .2s ease; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+    @media (max-width: 1200px) {
+      .login-hero { grid-template-columns: 1fr; }
+      .hero-diagram { display: none; }
+      .chat-view { grid-template-columns: minmax(0,1fr); }
+      .context-side { display: none; }
+      .grid-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .cards-3 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    }
+    @media (max-width: 900px) {
+      :root { --sidebar: 66px; }
+      .sidebar-title, .nav-item span:not(.icon), .nav-group-title, .conversation-list, .new-chat span:not(.icon), .user-meta { display: none; }
+      .new-chat-wrap { padding: 10px 8px; }
+      .nav-item { justify-content: center; padding: 0; }
+      .sidebar-head { justify-content: center; padding: 0; }
+      .sidebar-foot { padding: 8px; }
+      .user-card { justify-content: center; padding: 4px; }
+      .content-grid, .two-col { grid-template-columns: 1fr; }
+      .map-layout { grid-template-columns: 128px minmax(0,1fr); }
+      .feature-panel { display:none; }
+    }
+    @media (max-width: 700px) {
+      .login-page { grid-template-columns: 1fr; }
+      .login-visual { display: none; }
+      .login-panel { padding: 24px; }
+      .screen { padding: 10px; }
+      .grid-4, .cards-3, .form-grid { grid-template-columns: 1fr; }
+      .view-title { flex-direction: column; }
+      .view-actions { justify-content: flex-start; }
+      .graph-summary { grid-template-columns: 1fr; }
+      .map-layout { grid-template-columns: 1fr; }
+      .layer-panel { border-right:0; border-bottom:1px solid var(--line-200); display:flex; gap:11px; flex-wrap:wrap; }
+      .panel-label { width:100%; margin-bottom:0; }
+      .chat-body { padding-inline: 10px; }
+      .bubble { max-width: 92%; }
+    }
+  </style>
+</head>
+<body>
+  <!--
+    Yuxi 前端重构参考模板
+    - 本文件不是对现有 Vue 文件的直接替换，而是视觉和信息架构参考。
+    - Vue 路由映射建议：/login、/agent、/workspace、/extensions、/model-manage、/dashboard。
+    - 规划新增：/spatial；知识库详情可继续放在 /extensions/knowledgebase/:kbId。
+    - 已移除与上游作者直接关联的 GitHub Star、作者头像和宣传入口。
+  -->
+
+  <section id="loginPage" class="login-page">
+    <div class="login-visual">
+      <div class="login-grid"></div><div class="login-orb a"></div><div class="login-orb b"></div>
+      <div class="login-brand brand-lockup">
+        <div class="brand-mark">AI</div>
+        <div><strong>工程知识智能体平台</strong><span>Engineering Knowledge Agent Platform</span></div>
+      </div>
+      <div class="login-hero">
+        <div class="login-copy">
+          <h1>让工程知识、空间数据与智能体协同工作</h1>
+          <p>统一管理模型、知识库、MCP 服务、技能与空间图层，在会话中完成检索增强、知识图谱分析和地图交互。</p>
+        </div>
+        <svg class="hero-diagram" viewBox="0 0 430 360" aria-label="智能体、知识库、知识图谱和空间数据关系图">
+          <defs><filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+          <g fill="none" stroke="rgba(139,211,255,.72)" stroke-width="2">
+            <path d="M74 76 L208 178 L347 86"/><path d="M208 178 L335 272"/><path d="M208 178 L72 274"/><path d="M74 76 L72 274"/><path d="M347 86 L335 272"/>
+          </g>
+          <g filter="url(#glow)">
+            <circle cx="208" cy="178" r="42" fill="#1384fa"/><circle cx="74" cy="76" r="27" fill="#1fb9bc"/><circle cx="347" cy="86" r="27" fill="#65b4ff"/><circle cx="72" cy="274" r="27" fill="#73c9e1"/><circle cx="335" cy="272" r="27" fill="#3da8ff"/>
+          </g>
+          <g fill="#fff" text-anchor="middle" font-size="13" font-weight="700">
+            <text x="208" y="174">智能体</text><text x="208" y="192">工作流</text><text x="74" y="80">模型</text><text x="347" y="90">知识库</text><text x="72" y="278">图谱</text><text x="335" y="276">空间数据</text>
+          </g>
+        </svg>
+      </div>
+      <div class="login-meta"><span>统一配置</span><span>状态可见</span><span>权限隔离</span><span>工具可扩展</span></div>
+    </div>
+    <div class="login-panel">
+      <form class="login-form" onsubmit="handleLogin(event)">
+        <h2>欢迎登录</h2>
+        <p>使用您的平台账号进入工作台。登录后将根据角色展示可访问的模块。</p>
+        <div class="field"><label for="username">账号</label><input id="username" autocomplete="username" value="admin" placeholder="请输入账号" /></div>
+        <div class="field"><label for="password">密码</label><input id="password" type="password" autocomplete="current-password" value="12345678" placeholder="请输入密码" /></div>
+        <div class="login-options"><label><input type="checkbox" checked /> 记住登录状态</label><a href="#">忘记密码？</a></div>
+        <button id="loginButton" class="btn btn-primary" style="width:100%" type="submit"><span class="icon"><svg><use href="#i-login"/></svg></span><span>登录</span></button>
+        <div class="login-footer">平台管理员可在登录后配置模型服务、知识库、MCP 服务和技能。请勿在共享设备上保存登录状态。</div>
+      </form>
+    </div>
+  </section>
+
+  <section id="appPage" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div class="brand-mark">AI</div>
+        <div class="sidebar-title"><strong>工程知识智能体平台</strong><span>工作台</span></div>
+      </div>
+      <div class="new-chat-wrap"><button class="btn btn-primary new-chat" onclick="switchView('chat')"><span class="icon"><svg><use href="#i-plus"/></svg></span><span>创建新对话</span></button></div>
+      <div class="nav-scroll">
+        <div class="nav-group-title">工作</div>
+        <button class="nav-item active" data-view="chat" onclick="switchView('chat')"><span class="icon"><svg><use href="#i-chat"/></svg></span><span>智能体会话</span></button>
+        <button class="nav-item" data-view="workspace" onclick="switchView('workspace')"><span class="icon"><svg><use href="#i-folder"/></svg></span><span>工作区</span></button>
+        <button class="nav-item" data-view="extensions" onclick="switchView('extensions')"><span class="icon"><svg><use href="#i-grid"/></svg></span><span>智能体扩展</span></button>
+        <button class="nav-item" data-view="spatial" onclick="switchView('spatial')"><span class="icon"><svg><use href="#i-map"/></svg></span><span>空间数据</span><b class="nav-count">新增</b></button>
+        <button class="nav-item" data-view="agents" onclick="switchView('agents')"><span class="icon"><svg><use href="#i-bot"/></svg></span><span>智能体管理</span></button>
+        <button class="nav-item" data-view="dashboard" onclick="switchView('dashboard')"><span class="icon"><svg><use href="#i-chart"/></svg></span><span>数据总览</span></button>
+        <div class="nav-group-title">最近对话</div>
+        <div class="conversation-list">
+          <button class="conversation active">供水管线修复方案检索</button>
+          <button class="conversation">滨江路空间图层核查</button>
+          <button class="conversation">标书关键指标提取</button>
+          <button class="conversation">知识图谱实体关系检索</button>
+        </div>
+      </div>
+      <div class="sidebar-foot">
+        <div class="user-card">
+          <div class="avatar">管</div>
+          <div class="user-meta"><strong>平台管理员</strong><span>系统管理与配置</span></div>
+          <button class="top-icon" aria-label="退出" onclick="openConfirm('logout')"><span class="icon"><svg><use href="#i-logout"/></svg></span></button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="crumbs"><span>工作台</span><span>/</span><strong id="crumbCurrent">智能体会话</strong></div>
+        <div class="top-actions">
+          <span class="status ok">服务正常</span>
+          <button class="top-icon" aria-label="任务中心" title="任务中心"><span class="icon"><svg><use href="#i-task"/></svg></span></button>
+          <button class="top-icon" aria-label="设置" title="设置" onclick="toast('已打开设置入口（模板演示）')"><span class="icon"><svg><use href="#i-settings"/></svg></span></button>
+        </div>
+      </header>
+
+      <div class="screen">
+        <!-- /agent -->
+        <section id="view-chat" class="view active">
+          <div class="chat-view">
+            <div class="chat-card card">
+              <div class="chat-head">
+                <div class="agent-switch"><div class="agent-avatar">专</div><div><strong>工程知识助手</strong><span>已启用知识库、知识图谱与空间数据工具</span></div></div>
+                <div class="view-actions"><span class="chip active">知识库 2</span><span class="chip active">空间图层 3</span><button class="btn btn-secondary btn-sm">切换智能体</button></div>
+              </div>
+              <div class="chat-body">
+                <div class="message me"><div class="msg-avatar">我</div><div class="bubble">查询滨江路供水管线漏损相关节点，并结合知识库文档给出修复建议。请同时展示涉及的空间图层。</div></div>
+                <div class="message"><div class="msg-avatar">AI</div><div class="bubble">我将先查询知识图谱中的相关实体和关系，再根据命中节点增强知识库检索，并加载对应空间图层。</div></div>
+                <div class="tool-card">
+                  <div class="tool-head"><div class="tool-title"><span class="icon"><svg><use href="#i-graph"/></svg></span>query_knowledge_graph</div><span class="status ok">执行完成</span></div>
+                  <div class="tool-body">
+                    <div class="graph-summary"><div class="mini-stat"><span>命中实体</span><strong>8</strong></div><div class="mini-stat"><span>关系</span><strong>12</strong></div><div class="mini-stat"><span>关联文档</span><strong>5</strong></div></div>
+                    <div class="relation-line"><span class="entity">滨江路供水管线</span><span class="relation">— 发生 —</span><span class="entity">漏损</span><span class="relation">— 建议采用 —</span><span class="entity">局部修复</span></div>
+                  </div>
+                </div>
+                <div class="tool-card">
+                  <div class="tool-head"><div class="tool-title"><span class="icon"><svg><use href="#i-search"/></svg></span>query_kb · 图谱扩展检索</div><span class="status ok">返回 6 个片段</span></div>
+                  <div class="tool-body" style="font-size:13px;line-height:1.75;color:var(--ink-700)">已根据图谱节点扩展召回《供水管道非开挖修复技术指南》《滨江路巡检记录》和《管网漏损处置流程》等文档片段。图谱结果作为增强召回信号，与普通向量检索结果融合排序。</div>
+                </div>
+                <div class="tool-card">
+                  <div class="tool-head"><div class="tool-title"><span class="icon"><svg><use href="#i-map"/></svg></span>show_spatial_map · 滨江路供水管线</div><span class="status info">3 个叠加图层</span></div>
+                  <div class="tool-body">
+                    <div class="map-layout">
+                      <div class="layer-panel"><div class="panel-label">图层</div><label class="layer-toggle"><input type="checkbox" checked /><span class="swatch" style="background:#1685ff"></span>供水管线</label><label class="layer-toggle"><input type="checkbox" checked /><span class="swatch" style="background:#e24e58"></span>漏损点位</label><label class="layer-toggle"><input type="checkbox" checked /><span class="swatch" style="background:#25a77b"></span>道路边界</label></div>
+                      <div class="map-stage">
+                        <div class="map-toolbar"><button class="map-control">＋</button><button class="map-control">−</button><button class="map-control">⌂</button></div>
+                        <svg viewBox="0 0 700 330" aria-label="空间图层可视化地图">
+                          <path d="M20 86 C170 62, 250 102, 392 75 S560 88, 680 48" fill="none" stroke="#b4c4d6" stroke-width="46" opacity=".55"/>
+                          <path d="M30 238 C154 216, 270 248, 380 226 S568 214, 690 248" fill="none" stroke="#b4c4d6" stroke-width="38" opacity=".42"/>
+                          <path d="M20 86 C170 62, 250 102, 392 75 S560 88, 680 48" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="11 11" opacity=".8"/>
+                          <path d="M30 238 C154 216, 270 248, 380 226 S568 214, 690 248" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="11 11" opacity=".8"/>
+                          <path class="map-feature" data-name="滨江路 DN300 供水干管" data-type="供水干管" data-code="WS-BJL-001" data-status="重点巡检" d="M74 167 C188 118, 310 183, 426 142 S580 137, 650 108" fill="none" stroke="#1685ff" stroke-width="7"/>
+                          <path d="M176 132 L176 244" fill="none" stroke="#1685ff" stroke-width="5"/><path d="M426 142 L474 245" fill="none" stroke="#1685ff" stroke-width="5"/>
+                          <circle class="map-feature" data-name="漏损疑似点 A-12" data-type="漏损点位" data-code="LEAK-A12" data-status="待核查" cx="317" cy="163" r="9" fill="#e24e58" stroke="#fff" stroke-width="3"/>
+                          <circle class="map-feature" data-name="阀门井 V-07" data-type="阀门井" data-code="VALVE-V07" data-status="正常" cx="474" cy="245" r="8" fill="#25a77b" stroke="#fff" stroke-width="3"/>
+                        </svg>
+                      </div>
+                      <aside class="feature-panel"><div class="panel-label">选中要素属性</div><dl><dt>名称</dt><dd id="featureName">滨江路 DN300 供水干管</dd><dt>类型</dt><dd id="featureType">供水干管</dd><dt>编码</dt><dd id="featureCode">WS-BJL-001</dd><dt>状态</dt><dd id="featureStatus">重点巡检</dd><dt>提示</dt><dd>点击地图中的管线、点位或阀门井查看属性。</dd></dl></aside>
+                    </div>
+                  </div>
+                </div>
+                <div class="message"><div class="msg-avatar">AI</div><div class="bubble">结合图谱关系和文档检索结果，建议先核查 A-12 漏损疑似点及其相邻阀门井 V-07，再根据现场条件选择局部非开挖修复。地图中已叠加供水管线、漏损点位和道路边界图层。</div></div>
+              </div>
+              <div class="chat-compose">
+                <div class="compose-box"><textarea placeholder="输入问题，可引用知识库、空间图层或工具……"></textarea><div class="compose-foot"><div class="compose-tools"><button class="chip active">@ 知识库</button><button class="chip active">地图图层</button><button class="chip">上传文件</button></div><button class="btn btn-primary btn-sm" onclick="toast('消息已发送（模板演示）')"><span>发送</span><span class="icon"><svg><use href="#i-send"/></svg></span></button></div></div>
+              </div>
+            </div>
+            <aside class="context-side card">
+              <div class="context-head"><strong>当前对话资源</strong><span>资源状态和作用范围清晰可见</span></div>
+              <div class="context-body">
+                <section class="context-section"><h3>知识库</h3><div class="resource"><span class="icon"><svg><use href="#i-book"/></svg></span><div><strong>供水管道技术资料</strong><span>Milvus · 图谱扩展检索已启用</span></div></div><div class="resource" style="margin-top:7px"><span class="icon"><svg><use href="#i-book"/></svg></span><div><strong>项目巡检记录</strong><span>Milvus · 混合检索</span></div></div></section>
+                <section class="context-section"><h3>空间数据</h3><div class="resource"><span class="icon"><svg><use href="#i-map"/></svg></span><div><strong>滨江路图层组合</strong><span>3 个可见图层 · EPSG:4326</span></div></div></section>
+                <section class="context-section"><h3>工具</h3><div class="resource"><span class="icon"><svg><use href="#i-tool"/></svg></span><div><strong>知识图谱查询</strong><span>返回节点、关系和检索提示</span></div></div><div class="resource" style="margin-top:7px"><span class="icon"><svg><use href="#i-tool"/></svg></span><div><strong>空间地图展示</strong><span>会话内地图与属性查看</span></div></div></section>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- /workspace -->
+        <section id="view-workspace" class="view">
+          <div class="view-title"><div><h1>工作区</h1><p>集中管理会话文件、处理任务和可复用资料，避免将工作区误设计为管线台账。</p></div><div class="view-actions"><button class="btn btn-secondary">新建文件夹</button><button class="btn btn-primary">上传文件</button></div></div>
+          <div class="card table-card"><div class="filter-row" style="padding:13px 13px 0"><div class="searchbox"><span class="icon"><svg><use href="#i-search"/></svg></span><input placeholder="搜索文件或文件夹" /></div><div><span class="chip active">全部</span> <span class="chip">文档</span> <span class="chip">空间数据</span></div></div><table><thead><tr><th>名称</th><th>类型</th><th>状态</th><th>更新时间</th><th style="text-align:right">操作</th></tr></thead><tbody><tr><td><strong>滨江路供水管线修复资料</strong></td><td>文件夹</td><td><span class="status ok">可用</span></td><td>2026-06-10 10:24</td><td><div class="table-actions"><button class="link-btn">打开</button><button class="link-btn">更多</button></div></td></tr><tr><td>供水管道非开挖修复技术指南.pdf</td><td>PDF</td><td><span class="status ok">解析完成</span></td><td>2026-06-09 18:12</td><td><div class="table-actions"><button class="link-btn">预览</button><button class="link-btn">引用</button></div></td></tr><tr><td>滨江路空间图层组合</td><td>空间图层</td><td><span class="status info">3 个图层</span></td><td>2026-06-09 16:08</td><td><div class="table-actions"><button class="link-btn" onclick="switchView('spatial')">查看地图</button><button class="link-btn">引用</button></div></td></tr></tbody></table></div>
+        </section>
+
+        <!-- /extensions -->
+        <section id="view-extensions" class="view">
+          <div class="view-title"><div><h1>智能体扩展</h1><p>管理知识库、MCP 服务和技能。模块名称与当前 Yuxi 的扩展中心保持一致。</p></div><div class="view-actions"><button class="btn btn-primary">新增扩展</button></div></div>
+          <div class="tabs"><button class="tab active">全部</button><button class="tab">知识库</button><button class="tab">MCP 服务</button><button class="tab">技能</button></div>
+          <div class="cards-3">
+            <div class="extension-card card"><div class="extension-head"><div class="extension-icon"><span class="icon"><svg><use href="#i-book"/></svg></span></div><span class="status ok">已启用</span></div><h3>供水管道技术资料</h3><p>Milvus 知识库，支持向量、BM25、混合检索和图谱扩展检索。</p><div class="extension-foot"><span>知识库 · 1,248 chunks</span><button class="link-btn" onclick="switchView('kb')">管理</button></div></div>
+            <div class="extension-card card"><div class="extension-head"><div class="extension-icon"><span class="icon"><svg><use href="#i-tool"/></svg></span></div><span class="status ok">已连接</span></div><h3>地图 MCP 服务</h3><p>用于地址解析、地图检索或其他外部空间服务。未配置时不影响离线空间图层。</p><div class="extension-foot"><span>MCP · 6 tools</span><button class="link-btn">管理</button></div></div>
+            <div class="extension-card card"><div class="extension-head"><div class="extension-icon"><span class="icon"><svg><use href="#i-spark"/></svg></span></div><span class="status info">可用</span></div><h3>标书信息提取技能</h3><p>面向大型招标文件的章节定位、字段抽取和结果整理技能。</p><div class="extension-foot"><span>Skill · v1.2</span><button class="link-btn">查看</button></div></div>
+          </div>
+        </section>
+
+        <!-- /extensions/knowledgebase/:kbId -->
+        <section id="view-kb" class="view">
+          <div class="view-title"><div><h1>知识库详情</h1><p>复用新版本 Milvus 知识库，并明确展示图谱抽取和图谱扩展检索状态。</p></div><div class="view-actions"><button class="btn btn-secondary" onclick="switchView('extensions')">返回扩展中心</button><button class="btn btn-primary">上传文档</button></div></div>
+          <div class="grid-4"><div class="metric card"><div class="metric-head"><span>文档</span><span class="icon"><svg><use href="#i-file"/></svg></span></div><strong>36</strong><small>已完成解析 34</small></div><div class="metric card"><div class="metric-head"><span>Chunks</span><span class="icon"><svg><use href="#i-grid"/></svg></span></div><strong>1,248</strong><small>Milvus 索引正常</small></div><div class="metric card"><div class="metric-head"><span>图谱实体</span><span class="icon"><svg><use href="#i-graph"/></svg></span></div><strong>684</strong><small>关系 1,126</small></div><div class="metric card"><div class="metric-head"><span>图谱任务</span><span class="icon"><svg><use href="#i-task"/></svg></span></div><strong style="font-size:19px;margin-top:12px">构建完成</strong><small>最近更新 10:16</small></div></div>
+          <div class="content-grid"><div class="card table-card"><div class="panel-title" style="padding:14px 14px 0"><h2>知识库文件</h2><span>状态可见，失败任务可重试</span></div><table><thead><tr><th>文件</th><th>解析</th><th>图谱抽取</th><th>更新时间</th><th style="text-align:right">操作</th></tr></thead><tbody><tr><td>供水管道非开挖修复技术指南.pdf</td><td><span class="status ok">完成</span></td><td><span class="status ok">完成</span></td><td>10:16</td><td><div class="table-actions"><button class="link-btn">查看</button><button class="link-btn">重建图谱</button></div></td></tr><tr><td>滨江路巡检记录.docx</td><td><span class="status ok">完成</span></td><td><span class="status warn">待处理</span></td><td>09:54</td><td><div class="table-actions"><button class="link-btn">查看</button><button class="link-btn">开始构建</button></div></td></tr></tbody></table></div><div class="card panel"><div class="panel-title"><h2>图谱扩展检索</h2><span class="status ok">已启用</span></div><div class="field"><label>检索模式</label><div class="selectlike">混合检索（向量 + BM25）</div></div><div class="field" style="margin-top:12px"><label>图谱检索</label><div class="selectlike">启用实体召回、三元组召回与 PPR 扩展</div></div><div class="field" style="margin-top:12px"><label>最终返回 Chunk 数</label><input value="10" /></div><div class="sticky-actions"><button class="btn btn-secondary">恢复默认</button><button class="btn btn-primary" onclick="toast('知识库配置已保存')">保存配置</button></div></div></div>
+        </section>
+
+        <!-- /spatial planned -->
+        <section id="view-spatial" class="view">
+          <div class="view-title"><div><h1>空间数据</h1><p>上传、管理和叠加空间图层。地图组合视图不会破坏原始图层，空间分析结果保存为派生图层。</p></div><div class="view-actions"><button class="btn btn-secondary">新建图层组合</button><button class="btn btn-primary" onclick="toast('已打开空间数据上传入口（模板演示）')">上传空间数据</button></div></div>
+          <div class="content-grid" style="grid-template-columns:360px minmax(0,1fr)"><div class="card panel"><div class="panel-title"><h2>图层列表</h2><span>4 个图层</span></div><div class="filter-row"><div class="searchbox" style="min-width:100%"><span class="icon"><svg><use href="#i-search"/></svg></span><input placeholder="搜索图层" /></div></div><label class="resource"><input type="checkbox" checked /><span class="swatch" style="background:#1685ff"></span><div><strong>供水管线</strong><span>LineString · 1,842 要素</span></div></label><label class="resource" style="margin-top:8px"><input type="checkbox" checked /><span class="swatch" style="background:#e24e58"></span><div><strong>漏损点位</strong><span>Point · 86 要素</span></div></label><label class="resource" style="margin-top:8px"><input type="checkbox" checked /><span class="swatch" style="background:#25a77b"></span><div><strong>阀门井</strong><span>Point · 392 要素</span></div></label><label class="resource" style="margin-top:8px"><input type="checkbox" /><span class="swatch" style="background:#c79014"></span><div><strong>道路边界</strong><span>Polygon · 52 要素</span></div></label></div><div class="card panel"><div class="panel-title"><h2>滨江路图层组合</h2><span class="status info">EPSG:4326</span></div><div class="map-layout" style="grid-template-columns:minmax(0,1fr) 230px"><div class="map-stage"><div class="map-toolbar"><button class="map-control">＋</button><button class="map-control">−</button><button class="map-control">⌂</button></div><svg viewBox="0 0 700 330"><path d="M20 86 C170 62, 250 102, 392 75 S560 88, 680 48" fill="none" stroke="#b4c4d6" stroke-width="46" opacity=".55"/><path d="M30 238 C154 216, 270 248, 380 226 S568 214, 690 248" fill="none" stroke="#b4c4d6" stroke-width="38" opacity=".42"/><path class="map-feature" data-name="滨江路 DN300 供水干管" data-type="供水干管" data-code="WS-BJL-001" data-status="重点巡检" d="M74 167 C188 118, 310 183, 426 142 S580 137, 650 108" fill="none" stroke="#1685ff" stroke-width="7"/><circle class="map-feature" data-name="漏损疑似点 A-12" data-type="漏损点位" data-code="LEAK-A12" data-status="待核查" cx="317" cy="163" r="9" fill="#e24e58" stroke="#fff" stroke-width="3"/><circle class="map-feature" data-name="阀门井 V-07" data-type="阀门井" data-code="VALVE-V07" data-status="正常" cx="474" cy="245" r="8" fill="#25a77b" stroke="#fff" stroke-width="3"/></svg></div><aside class="feature-panel"><div class="panel-label">选中要素属性</div><dl><dt>名称</dt><dd id="featureName2">滨江路 DN300 供水干管</dd><dt>类型</dt><dd id="featureType2">供水干管</dd><dt>编码</dt><dd id="featureCode2">WS-BJL-001</dd><dt>状态</dt><dd id="featureStatus2">重点巡检</dd></dl></aside></div><div class="sticky-actions"><button class="btn btn-secondary">空间分析</button><button class="btn btn-primary" onclick="toast('图层组合已保存')">保存图层组合</button></div></div></div>
+        </section>
+
+        <!-- /model-manage -->
+        <section id="view-agents" class="view">
+          <div class="view-title"><div><h1>智能体管理</h1><p>模型由用户在前端填写 API 进行配置。将模型服务、智能体和工具权限分区展示，避免混淆。</p></div><div class="view-actions"><button class="btn btn-primary">新建智能体</button></div></div>
+          <div class="two-col"><div class="card list-panel"><button class="active">工程知识助手</button><button>标书编写助手</button><button>空间数据助手</button><button>新建智能体……</button></div><div class="card detail-panel"><h2>工程知识助手</h2><p>面向工程文档问答、知识图谱检索和空间数据展示的主智能体。</p><div class="tabs"><button class="tab active">基础信息</button><button class="tab">模型服务</button><button class="tab">工具权限</button><button class="tab">知识库</button></div><div class="form-grid"><div class="field"><label>智能体名称</label><input value="工程知识助手" /></div><div class="field"><label>默认模型</label><div class="selectlike">OpenAI Compatible / DeepSeek Chat</div></div><div class="field"><label>API Base URL</label><input value="https://api.example.com/v1" /></div><div class="field"><label>API Key</label><input value="sk-••••••••••••" /></div></div><div class="field" style="margin-top:14px"><label>系统提示词</label><textarea rows="5">优先使用知识库工具检索工程资料；涉及实体关系时先调用 query_knowledge_graph，再将 graph_entity_ids 传递给 query_kb；涉及空间数据时调用 show_spatial_map。</textarea><span class="field-hint">API Key 仅显示掩码。修改后应提供保存反馈，并在失败时显示可操作的错误信息。</span></div><div class="sticky-actions"><button class="btn btn-secondary">取消</button><button class="btn btn-primary" onclick="toast('智能体配置已保存')">保存配置</button></div></div></div>
+        </section>
+
+        <!-- /dashboard admin -->
+        <section id="view-dashboard" class="view">
+          <div class="view-title"><div><h1>数据总览</h1><p>只展示可从当前系统真实获取的运行指标，不使用虚构的管网闭环率或实体核算数据。</p></div><div class="view-actions"><button class="btn btn-secondary">刷新</button></div></div>
+          <div class="grid-4"><div class="metric card"><div class="metric-head"><span>知识库</span><span class="icon"><svg><use href="#i-book"/></svg></span></div><strong>12</strong><small>Milvus 8 · 外部知识库 4</small></div><div class="metric card"><div class="metric-head"><span>文档 Chunks</span><span class="icon"><svg><use href="#i-grid"/></svg></span></div><strong>18,426</strong><small>索引服务正常</small></div><div class="metric card"><div class="metric-head"><span>图谱实体</span><span class="icon"><svg><use href="#i-graph"/></svg></span></div><strong>4,869</strong><small>关系 9,214</small></div><div class="metric card"><div class="metric-head"><span>运行任务</span><span class="icon"><svg><use href="#i-task"/></svg></span></div><strong>3</strong><small>解析 1 · 图谱构建 2</small></div></div>
+          <div class="content-grid"><div class="card panel"><div class="panel-title"><h2>资源状态</h2><span>最近 24 小时</span></div><div class="bar-row"><div class="bar-meta"><span>Milvus 知识库索引</span><strong>92%</strong></div><div class="bar"><i style="width:92%"></i></div></div><div class="bar-row"><div class="bar-meta"><span>知识图谱抽取任务</span><strong>74%</strong></div><div class="bar"><i style="width:74%"></i></div></div><div class="bar-row"><div class="bar-meta"><span>空间数据入库任务</span><strong>58%</strong></div><div class="bar"><i style="width:58%"></i></div></div></div><div class="card panel"><div class="panel-title"><h2>服务状态</h2><span>实时</span></div><div class="resource"><span class="status ok">正常</span><div><strong>API 服务</strong><span>响应稳定</span></div></div><div class="resource" style="margin-top:8px"><span class="status ok">正常</span><div><strong>Milvus</strong><span>连接正常</span></div></div><div class="resource" style="margin-top:8px"><span class="status ok">正常</span><div><strong>Neo4j</strong><span>连接正常</span></div></div><div class="resource" style="margin-top:8px"><span class="status ok">正常</span><div><strong>PostGIS</strong><span>连接正常</span></div></div></div></div>
+        </section>
+      </div>
+    </main>
+  </section>
+
+  <div id="confirmModal" class="modal-backdrop hidden">
+    <div class="modal"><div class="modal-head"><h3 id="confirmTitle">确认操作</h3><p id="confirmText">该操作需要确认。</p></div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeConfirm()">取消</button><button class="btn btn-danger" onclick="confirmAction()">确认退出</button></div></div>
+  </div>
+  <div id="toasts" class="toast-stack"></div>
+
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H6l-3 2 1.4-4A8 8 0 1 1 21 12Z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 18 3 21V6l6-3 6 3 6-3v15l-6 3Z"/><path d="M9 3v15M15 6v15"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="13" rx="3"/><path d="M12 3v3M8 11h.01M16 11h.01M8 15h8"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+    <symbol id="i-task" viewBox="0 0 24 24"><path d="M9 5h10M9 12h10M9 19h10M4 5h.01M4 12h.01M4 19h.01"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-2.12 2.12-.06-.06a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.65V20.5h-3v-.09A1.8 1.8 0 0 0 10.6 18.8a1.8 1.8 0 0 0-1.98.36l-.06.06-2.12-2.12.06-.06A1.8 1.8 0 0 0 6.86 15.1 1.8 1.8 0 0 0 5.2 14H5.1v-3h.1a1.8 1.8 0 0 0 1.66-1.08 1.8 1.8 0 0 0-.36-1.98l-.06-.06 2.12-2.12.06.06a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 11.68 4.5v-.1h3v.1a1.8 1.8 0 0 0 1.08 1.66 1.8 1.8 0 0 0 1.98-.36l.06-.06 2.12 2.12-.06.06a1.8 1.8 0 0 0-.36 1.98A1.8 1.8 0 0 0 21.16 11h.1v3h-.1A1.8 1.8 0 0 0 19.4 15Z"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6"/></symbol>
+    <symbol id="i-graph" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="m12 7-6 9M12 7l6 9M7 18h10"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4v15.5M20 4v16M6.5 4H20"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 4.9 4.9l-7.9 7.9a2.1 2.1 0 0 1-3-3l7.9-7.9a4 4 0 0 0-1.9-5.3Z"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2ZM19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8Z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></symbol>
+  </defs></svg>
+
+  <script>
+    const crumbs = { chat: '智能体会话', workspace: '工作区', extensions: '智能体扩展', kb: '知识库详情', spatial: '空间数据', agents: '智能体管理', dashboard: '数据总览' };
+    function handleLogin(event) {
+      event.preventDefault();
+      const button = document.getElementById('loginButton');
+      const old = button.innerHTML;
+      button.disabled = true; button.textContent = '登录验证中…';
+      setTimeout(() => { document.getElementById('loginPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden'); button.disabled = false; button.innerHTML = old; toast('登录成功，欢迎进入工作台'); }, 650);
+    }
+    function switchView(name) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      const view = document.getElementById('view-' + name); if (view) view.classList.add('active');
+      document.querySelectorAll('.nav-item[data-view]').forEach(item => item.classList.toggle('active', item.dataset.view === name || (name === 'kb' && item.dataset.view === 'extensions')));
+      document.getElementById('crumbCurrent').textContent = crumbs[name] || name;
+    }
+    function toast(text) {
+      const box = document.getElementById('toasts'); const item = document.createElement('div');
+      item.className = 'toast'; item.innerHTML = '<span class="status ok">完成</span><span>' + text + '</span>';
+      box.appendChild(item); setTimeout(() => item.remove(), 2600);
+    }
+    let confirmType = '';
+    function openConfirm(type) {
+      confirmType = type; document.getElementById('confirmModal').classList.remove('hidden');
+      if (type === 'logout') { document.getElementById('confirmTitle').textContent = '确认退出登录？'; document.getElementById('confirmText').textContent = '退出后需要重新登录才能访问工作台。未保存的输入内容将不会保留。'; }
+    }
+    function closeConfirm() { document.getElementById('confirmModal').classList.add('hidden'); }
+    function confirmAction() { if (confirmType === 'logout') { closeConfirm(); document.getElementById('appPage').classList.add('hidden'); document.getElementById('loginPage').classList.remove('hidden'); } }
+    function bindMapFeatures() {
+      document.querySelectorAll('.map-feature').forEach(el => el.addEventListener('click', () => {
+        const pairs = [['featureName','name'],['featureType','type'],['featureCode','code'],['featureStatus','status'],['featureName2','name'],['featureType2','type'],['featureCode2','code'],['featureStatus2','status']];
+        pairs.forEach(([id,key]) => { const node = document.getElementById(id); if (node) node.textContent = el.dataset[key] || '-'; });
+        toast('已选中要素：' + (el.dataset.name || '未命名要素'));
+      }));
+    }
+    bindMapFeatures();
+  </script>
+</body>
+</html>
