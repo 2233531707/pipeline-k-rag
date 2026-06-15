@@ -6,7 +6,6 @@ from typing import Any
 from langgraph.prebuilt.tool_node import ToolRuntime
 from pydantic import BaseModel, Field
 
-from yuxi import knowledge_base
 from yuxi.agents.toolkits.kbs.tools import (
     _resolve_visible_knowledge_bases_for_query,
 )
@@ -17,8 +16,11 @@ from yuxi.utils import logger
 class QueryKnowledgeGraphInput(BaseModel):
     """显式查询知识图谱节点和关系的输入模型"""
 
-    kb_id: str = Field(description="知识库资源 ID，也就是 kb_id")
-    keyword: str = Field(description="图谱查询关键词，支持实体名、概念、属性值等")
+    kb_id: str = Field(description="知识库资源 ID 或知识库名称")
+    keyword: str = Field(
+        default="*",
+        description="图谱查询关键词；省略或使用 * 表示任意返回节点",
+    )
     max_depth: int = Field(default=1, ge=0, le=5, description="关系跳数，0 表示仅匹配关键词节点")
     max_nodes: int = Field(default=50, ge=1, le=200, description="最大返回节点数")
     exclude_chunk: bool = Field(default=True, description="是否排除 Chunk 节点，默认排除以聚焦实体")
@@ -69,7 +71,7 @@ def _extract_retrieval_hints(
 
     # 从 keyword 中分词提取关键词
     keywords: list[str] = []
-    raw_tokens = re.split(r"[，,、\s]+", keyword.strip()) if keyword.strip() else []
+    raw_tokens = re.split(r"[，,、\s]+", keyword.strip()) if keyword.strip() and keyword.strip() != "*" else []
     for token in raw_tokens:
         token = token.strip()
         if token and len(token) >= 1:
@@ -92,7 +94,7 @@ def _extract_retrieval_hints(
 @tool(category="knowledge", tags=["知识库", "图谱"], args_schema=QueryKnowledgeGraphInput)
 async def query_knowledge_graph(
     kb_id: str,
-    keyword: str,
+    keyword: str = "*",
     max_depth: int = 1,
     max_nodes: int = 50,
     exclude_chunk: bool = True,
@@ -105,8 +107,8 @@ async def query_knowledge_graph(
     返回结果中的 graph_entity_ids 可用于 query_kb 的图谱增强检索。
 
     Args:
-        kb_id: 知识库资源 ID
-        keyword: 图谱查询关键词
+        kb_id: 知识库资源 ID 或知识库名称
+        keyword: 图谱查询关键词；省略或使用 * 表示任意返回节点
         max_depth: 关系跳数（0=仅匹配节点，1=一跳邻居，以此类推）
         max_nodes: 最大返回节点数
         exclude_chunk: 是否排除 Chunk 节点
@@ -116,24 +118,24 @@ async def query_knowledge_graph(
     """
     if not kb_id:
         return {"error": "请提供 kb_id"}
-    if not keyword or not keyword.strip():
-        return {"error": "请提供图谱查询关键词"}
+    normalized_keyword = str(keyword or "").strip() or "*"
 
     visible_kbs = await _resolve_visible_knowledge_bases_for_query(runtime)
     if not visible_kbs:
         return {"error": "无法获取当前会话可访问的知识库"}
 
     normalized_kb_id = str(kb_id).strip()
-    visible_kb_ids = {str(kb.get("kb_id") or "").strip() for kb in visible_kbs}
-    if normalized_kb_id not in visible_kb_ids:
+    matched_kbs = [kb for kb in visible_kbs if str(kb.get("kb_id") or "").strip() == normalized_kb_id]
+    if not matched_kbs:
+        matched_kbs = [kb for kb in visible_kbs if str(kb.get("name") or "").strip() == normalized_kb_id]
+    if len(matched_kbs) > 1:
+        return {"error": f"知识库名称 '{normalized_kb_id}' 不唯一，请改用 kb_id"}
+    if not matched_kbs:
         return {"error": f"知识库资源 '{normalized_kb_id}' 不存在或当前会话未启用"}
 
-    # 检查知识库类型是否支持图谱
-    kb_type = ""
-    for kb in visible_kbs:
-        if str(kb.get("kb_id") or "").strip() == normalized_kb_id:
-            kb_type = str(kb.get("kb_type") or "").lower()
-            break
+    matched_kb = matched_kbs[0]
+    normalized_kb_id = str(matched_kb.get("kb_id") or "").strip()
+    kb_type = str(matched_kb.get("kb_type") or "").lower()
 
     if kb_type != "milvus":
         return {"error": f"知识库 '{normalized_kb_id}' 类型为 '{kb_type}'，不支持图谱查询。仅 Milvus 知识库支持图谱。"}
@@ -144,7 +146,7 @@ async def query_knowledge_graph(
         service = MilvusGraphService(kb_id=normalized_kb_id)
         result = await service.query_nodes(
             kb_id=normalized_kb_id,
-            keyword=keyword.strip(),
+            keyword=normalized_keyword,
             max_depth=max_depth,
             max_nodes=max_nodes,
             exclude_chunk=exclude_chunk,
@@ -153,11 +155,11 @@ async def query_knowledge_graph(
         nodes = result.get("nodes") or []
         edges = result.get("edges") or []
 
-        retrieval_hints = _extract_retrieval_hints(nodes, edges, keyword)
+        retrieval_hints = _extract_retrieval_hints(nodes, edges, normalized_keyword)
 
         return {
             "kb_id": normalized_kb_id,
-            "query": keyword.strip(),
+            "query": normalized_keyword,
             "nodes": nodes,
             "edges": edges,
             "retrieval_hints": retrieval_hints,

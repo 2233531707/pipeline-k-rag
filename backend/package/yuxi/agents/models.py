@@ -47,6 +47,9 @@ def load_chat_model(fully_specified_name: str, **kwargs) -> BaseChatModel:
 
     from langchain_openai import ChatOpenAI
 
+    if info.provider_id in {"siliconflow", "siliconflow-cn"}:
+        kwargs.setdefault("disable_streaming", "tool_calling")
+
     return ChatOpenAI(
         model=info.model_id,
         api_key=SecretStr(api_key),

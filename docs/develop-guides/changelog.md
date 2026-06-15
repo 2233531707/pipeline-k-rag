@@ -18,6 +18,7 @@
 
 ### 开发记录
 
+- 修复知识图谱对话中 SiliconFlow 流式工具调用偶发返回空工具名时直接终止的问题：SiliconFlow 在绑定工具时改用完整模型响应，并保留参数可唯一匹配时的工具名恢复保护；`query_knowledge_graph` 同时支持按知识库名称调用，并允许省略关键词以任意返回指定数量的节点。
 - 修复知识库迁移包超过 20 MB 时被 Web 代理拒绝的问题：迁移导入接口支持 5 GiB 包文件，并采用流式代理请求以降低并发上传时的临时磁盘占用。
 - 修复 Windows/NTFS 上 PostgreSQL bind mount 无法初始化的问题：开发与生产 Compose 改用独立命名卷，生产数据库镜像统一为 PostGIS 16-3.5，确保空间功能在生产栈可用。
 - 修复 Windows/WSL bind mount 下 API 与 Worker 热重载监听器因原生 watcher 资源分配失败而退出的问题：开发 Compose 默认使用 `watchfiles` 轮询模式，仍可通过环境变量覆盖。

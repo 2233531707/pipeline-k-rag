@@ -81,6 +81,7 @@ docs/vibe
 /models
 
 .taskr/
+docs/.pnpm-store/
 
 # Portable knowledge packages and local data archives
 *.yuxikb.zip

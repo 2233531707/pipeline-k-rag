@@ -36,9 +36,9 @@ async def _run_graph_query(**kwargs):
 
 class TestQueryKnowledgeGraphInput:
     def test_default_values(self):
-        schema = QueryKnowledgeGraphInput(kb_id="kb-1", keyword="test")
+        schema = QueryKnowledgeGraphInput(kb_id="kb-1")
         assert schema.kb_id == "kb-1"
-        assert schema.keyword == "test"
+        assert schema.keyword == "*"
         assert schema.max_depth == 1
         assert schema.max_nodes == 50
         assert schema.exclude_chunk is True
@@ -144,10 +144,36 @@ class TestQueryKnowledgeGraph:
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_empty_keyword(self):
+    async def test_empty_keyword_queries_arbitrary_nodes(self):
         runtime = self._make_runtime()
-        result = await _run_graph_query(kb_id="kb-graph", keyword="", runtime=runtime)
-        assert "error" in result
+        with patch("yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService") as mock_svc_cls:
+            mock_svc = MagicMock()
+            mock_svc.query_nodes = AsyncMock(return_value={"nodes": [], "edges": []})
+            mock_svc_cls.return_value = mock_svc
+
+            result = await _run_graph_query(kb_id="kb-graph", keyword="", max_nodes=20, runtime=runtime)
+
+        assert result["query"] == "*"
+        mock_svc.query_nodes.assert_awaited_once_with(
+            kb_id="kb-graph",
+            keyword="*",
+            max_depth=1,
+            max_nodes=20,
+            exclude_chunk=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_resolves_visible_knowledge_base_name(self):
+        runtime = self._make_runtime(visible_kbs=[{"kb_id": "kb-graph", "name": "1", "kb_type": "milvus"}])
+        with patch("yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService") as mock_svc_cls:
+            mock_svc = MagicMock()
+            mock_svc.query_nodes = AsyncMock(return_value={"nodes": [], "edges": []})
+            mock_svc_cls.return_value = mock_svc
+
+            result = await _run_graph_query(kb_id="1", max_nodes=20, runtime=runtime)
+
+        assert result["kb_id"] == "kb-graph"
+        assert result["query"] == "*"
 
     @pytest.mark.asyncio
     async def test_no_visible_kbs(self):
@@ -173,9 +199,7 @@ class TestQueryKnowledgeGraph:
     async def test_empty_graph_result(self):
         runtime = self._make_runtime()
 
-        with patch(
-            "yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService"
-        ) as mock_svc_cls:
+        with patch("yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.query_nodes = AsyncMock(return_value={"nodes": [], "edges": []})
             mock_svc_cls.return_value = mock_svc
@@ -197,9 +221,7 @@ class TestQueryKnowledgeGraph:
             {"id": "e1", "source_id": "n1", "target_id": "n2", "type": "WORKS_AT", "properties": {}},
         ]
 
-        with patch(
-            "yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService"
-        ) as mock_svc_cls:
+        with patch("yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.query_nodes = AsyncMock(return_value={"nodes": nodes, "edges": edges})
             mock_svc_cls.return_value = mock_svc
@@ -216,9 +238,7 @@ class TestQueryKnowledgeGraph:
     async def test_graph_service_exception(self):
         runtime = self._make_runtime()
 
-        with patch(
-            "yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService"
-        ) as mock_svc_cls:
+        with patch("yuxi.knowledge.graphs.milvus_graph_service.MilvusGraphService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.query_nodes = AsyncMock(side_effect=RuntimeError("Neo4j 连接失败"))
             mock_svc_cls.return_value = mock_svc
