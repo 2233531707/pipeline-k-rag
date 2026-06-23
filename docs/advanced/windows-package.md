@@ -13,7 +13,7 @@ cd packaging/windows
 .\scripts\test_installer.ps1
 ```
 
-`build_launcher.ps1` 使用 PyInstaller 生成启动器；`build_installer.ps1` 调用 Inno Setup 生成 `dist\地下管网知识模型数据库.exe`。构建机需要 Python 3.12+、Docker Desktop 和 Inno Setup 6。若启动器 EXE 已存在，只重建安装器时不需要重新安装 Python。
+`build_launcher.ps1` 使用 PyInstaller 生成启动器；`build_installer.ps1` 调用 NSIS `makensis` 生成 `dist\地下管网知识模型数据库.exe`。构建机需要 Python 3.12+、Docker Desktop 和 NSIS 3。若启动器 EXE 已存在，只重建安装器时不需要重新安装 Python。
 
 安装包使用运行时白名单，只包含后端、Docker、Web 源码及必要根配置，不包含 `.git`、`.env*`、迁移包、数据库文件、Docker 数据卷、日志或缓存。安装路径默认为：
 
