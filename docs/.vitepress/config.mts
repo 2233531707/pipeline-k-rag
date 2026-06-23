@@ -63,6 +63,7 @@ export default defineConfig({
           { text: '其他配置', link: '/advanced/misc' },
           { text: '生产部署', link: '/advanced/deployment' },
           { text: 'Windows 安装包', link: '/advanced/windows-package' },
+          { text: 'NSIS 与 Compose 封装', link: '/advanced/windows-nsis-compose-packaging' },
           { text: 'API Key 外部集成', link: '/advanced/api-key-integration' }
         ]
       },

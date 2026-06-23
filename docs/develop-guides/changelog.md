@@ -18,6 +18,7 @@
 
 ### 开发记录
 
+- 新增 NSIS 安装器与 Docker Compose 桌面封装实施文档，明确安装目录、Compose 命名、端口自动改配、外部 MinIO 复用、卸载保留数据和生产 stdio MCP 安全限制。
 - 重建 Windows 交付安装包：最终文件统一命名为 `地下管网知识模型数据库.exe`，改为当前用户目录安装，增加普通用户使用教程和安装验证，并将打包内容收紧为运行时白名单，避免携带 `.git`、本地 `.env*`、迁移包、数据卷、日志及缓存；桌面启动器、安装包与离线镜像导出统一使用独立 `docker-compose.desktop.yml` 和 `.env.desktop`；启动器首次初始化会生成随机本地密钥，desktop/prod Compose 移除弱默认密钥，desktop 默认不暴露状态服务端口，并补齐 `.dockerignore` 的敏感文件与运行时产物排除规则；sandbox 执行边界固定由 provisioner 承接，Docker socket 仅挂载到 sandbox-provisioner，sandbox 容器默认使用 internal network。
 - 收紧远程 Skill 任意来源安装治理：远程 list/search/prepare 仅管理员可调用，远程草稿确认要求管理员显式 `high_risk_confirmed`，远程 CLI 改用最小环境白名单并记录远程 list/search/prepare/confirm 审计日志；补齐管理端高风险说明、风险确认勾选框和“确认风险并安装”入口，未确认前禁止提交；普通用户上传 Skill 草稿确认路径保持可用。
 - 增强 Skill ZIP 上传治理：普通用户上传 ZIP 默认生成个人私有草稿，上传扫描限制文件数量、大小和压缩比，拒绝可执行二进制、未知大二进制、隐藏敏感文件和不安全路径，脚本文件允许但标记风险，并记录上传成功/失败审计日志与失败清理结果。
