@@ -14,6 +14,7 @@ class PackageManifest(BaseModel):
     generator: str = Field(default="yuxi-kb-export/1.0")
     database_name: str = Field(description="知识库名称")
     kb_type: str = Field(description="知识库类型")
+    group_name: str | None = Field(default=None, description="知识库分组名称")
     stats: dict[str, int] = Field(default_factory=dict, description="统计信息")
 
 

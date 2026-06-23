@@ -69,6 +69,16 @@ class UpdateDatabaseRequest(BaseModel):
     llm_model_spec: str | None = None
     additional_params: dict | None = None
     share_config: dict | None = None
+    group_id: str | None = None
+
+
+class CreateKnowledgeGroupRequest(BaseModel):
+    name: str
+    parent_group_id: str | None = None
+
+
+class RenameKnowledgeGroupRequest(BaseModel):
+    name: str
 
 
 class WorkspaceImportRequest(BaseModel):
@@ -174,6 +184,60 @@ async def _has_running_graph_build_task(kb_id: str) -> bool:
 # =============================================================================
 
 
+@knowledge.get("/groups")
+async def list_knowledge_groups(current_user: User = Depends(get_admin_user)):
+    """获取知识库分组列表。"""
+    try:
+        return await knowledge_base.list_groups()
+    except Exception as e:
+        logger.error(f"获取知识库分组失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取知识库分组失败: {e}")
+
+
+@knowledge.post("/groups")
+async def create_knowledge_group(data: CreateKnowledgeGroupRequest, current_user: User = Depends(get_admin_user)):
+    """创建知识库分组。"""
+    try:
+        return await knowledge_base.create_group(
+            data.name.strip(),
+            created_by=current_user.uid,
+            parent_group_id=data.parent_group_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"创建知识库分组失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"创建知识库分组失败: {e}")
+
+
+@knowledge.put("/groups/{group_id}")
+async def rename_knowledge_group(
+    group_id: str,
+    data: RenameKnowledgeGroupRequest,
+    current_user: User = Depends(get_admin_user),
+):
+    """重命名知识库分组。"""
+    try:
+        return await knowledge_base.rename_group(group_id, data.name.strip())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"重命名知识库分组失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"重命名知识库分组失败: {e}")
+
+
+@knowledge.delete("/groups/{group_id}")
+async def delete_knowledge_group(group_id: str, current_user: User = Depends(get_admin_user)):
+    """删除知识库分组。"""
+    try:
+        return await knowledge_base.delete_group(group_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"删除知识库分组失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"删除知识库分组失败: {e}")
+
+
 @knowledge.get("/databases")
 async def get_databases(current_user: User = Depends(get_admin_user)):
     """获取所有知识库（根据用户权限过滤）"""
@@ -194,6 +258,7 @@ async def create_database(
     llm_model_spec: str | None = Body(None),
     graph_build_config: dict | None = Body(None),
     share_config: dict | None = Body(None),
+    group_id: str | None = Body(None),
     current_user: User = Depends(get_admin_user),
 ):
     """创建知识库"""
@@ -282,6 +347,7 @@ async def create_database(
             share_config=share_config,
             created_by=current_user.uid,
             created_by_department_id=current_user.department_id,
+            group_id=group_id,
             **additional_params,
         )
 
@@ -439,6 +505,7 @@ async def update_database_info(
             update_llm_model_spec=update_llm_model_spec,
             additional_params=additional_params,
             share_config=data.share_config,
+            group_id=data.group_id if "group_id" in data.model_fields_set else None,
             operator_uid=current_user.uid,
             operator_department_id=current_user.department_id,
         )

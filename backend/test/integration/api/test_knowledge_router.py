@@ -129,6 +129,24 @@ async def test_admin_can_manage_knowledge_databases(test_client, admin_headers, 
     assert update_response.json()["database"]["description"] == "Updated by pytest"
 
 
+async def test_knowledge_groups_include_default_group(test_client, admin_headers, knowledge_database):
+    groups_response = await test_client.get("/api/knowledge/groups", headers=admin_headers)
+    assert groups_response.status_code == 200, groups_response.text
+    groups = groups_response.json().get("groups", [])
+
+    default_group = next((group for group in groups if group.get("is_default") is True), None)
+    assert default_group is not None
+    assert default_group["name"] == "默认分组"
+    assert default_group["group_id"]
+
+    list_response = await test_client.get("/api/knowledge/databases", headers=admin_headers)
+    assert list_response.status_code == 200, list_response.text
+    database = next(
+        entry for entry in list_response.json().get("databases", []) if entry["kb_id"] == knowledge_database["kb_id"]
+    )
+    assert database["group_id"] == default_group["group_id"]
+
+
 async def test_create_database_with_chunk_preset(test_client, admin_headers):
     db_name = f"pytest_chunk_preset_{uuid.uuid4().hex[:6]}"
     payload = {

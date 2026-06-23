@@ -13,7 +13,7 @@ import pytest
 from yuxi.knowledge.migration import checksums, importer, manifest, schemas
 
 
-def _build_package(tmp_path: Path) -> Path:
+def _build_package(tmp_path: Path, *, group_name: str | None = None) -> Path:
     root = tmp_path / "package"
     (root / "files" / "originals").mkdir(parents=True)
     (root / "files" / "parsed").mkdir(parents=True)
@@ -42,6 +42,7 @@ def _build_package(tmp_path: Path) -> Path:
     package_manifest = manifest.build_manifest(
         database_name="来源知识库",
         kb_type="milvus",
+        group_name=group_name,
         file_count=1,
         chunk_count=1,
     )
@@ -139,6 +140,39 @@ async def test_import_uses_created_kb_id_and_remaps_records(tmp_path: Path, monk
     assert fake_kb.restored_chunks[0]["id"] == f"{new_file_id}_chunk_0"
     assert all("kb-actual/" in upload[1] for upload in fake_minio.uploads)
     assert fake_file_repo.records[0][0] == new_file_id
+
+
+@pytest.mark.asyncio
+async def test_import_reuses_or_creates_manifest_group(tmp_path: Path, monkeypatch):
+    package_path = _build_package(tmp_path, group_name="项目资料")
+    fake_kb = FakeMilvusKB()
+
+    async def fake_ensure_group(group_name, created_by=None):
+        assert group_name == "项目资料"
+        assert created_by == "user-1"
+        return {"group_id": "group-1", "name": group_name, "is_default": False}
+
+    create_database = AsyncMock(return_value={"kb_id": "kb-actual", "name": "导入知识库"})
+    monkeypatch.setattr(importer, "MilvusKB", FakeMilvusKB)
+    monkeypatch.setattr(importer.knowledge_base, "ensure_group_by_name", fake_ensure_group)
+    monkeypatch.setattr(importer.knowledge_base, "create_database", create_database)
+    monkeypatch.setattr(importer.knowledge_base, "aget_kb", AsyncMock(return_value=fake_kb))
+    monkeypatch.setattr(importer.knowledge_base, "delete_database", AsyncMock())
+    monkeypatch.setattr(importer, "KnowledgeFileRepository", FakeFileRepository)
+    monkeypatch.setattr(importer, "get_minio_client", FakeMinioClient)
+
+    from yuxi.agents.buildin import agent_manager
+
+    monkeypatch.setattr(agent_manager, "reload_all", AsyncMock())
+
+    await importer.run_import(
+        package_path,
+        target_name="导入知识库",
+        embedding_model_spec="provider:embedding",
+        created_by="user-1",
+    )
+
+    assert create_database.await_args.kwargs["group_id"] == "group-1"
 
 
 @pytest.mark.asyncio

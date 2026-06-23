@@ -27,6 +27,12 @@
       <template #actions>
         <a-button
           class="lucide-icon-btn"
+          @click="openCreateGroupModal()"
+        >
+          <FolderPlus :size="16" /> 新建分组
+        </a-button>
+        <a-button
+          class="lucide-icon-btn"
           @click="state.openImportModal = true"
         >
           <Upload :size="16" /> 从迁移包导入
@@ -35,12 +41,35 @@
           type="primary"
           class="lucide-icon-btn"
           :disabled="!kbTypes.length"
-          @click="state.openNewDatabaseModel = true"
+          @click="openCreateDatabaseModal()"
         >
           <Plus :size="16" /> 新建知识库
         </a-button>
       </template>
     </PageShoulder>
+
+    <a-modal
+      :open="state.openNewGroupModal"
+      title="新建知识库分组"
+      :confirm-loading="groupState.creating"
+      @ok="handleCreateGroup"
+      @cancel="cancelCreateGroup"
+      destroyOnClose
+    >
+      <a-input
+        v-model:value="newGroup.name"
+        placeholder="分组名称"
+        @pressEnter="handleCreateGroup"
+      />
+      <div class="field-hint">可选父分组</div>
+      <a-select
+        v-model:value="newGroup.parent_group_id"
+        class="full-width"
+        :options="knowledgeGroupOptions"
+        allow-clear
+        placeholder="顶级分组"
+      />
+    </a-modal>
 
     <a-modal
       :open="state.openNewDatabaseModel"
@@ -77,6 +106,15 @@
         <div class="form-section">
           <h3 class="section-title">知识库名称<span class="required-mark">*</span></h3>
           <a-input v-model:value="newDatabase.name" placeholder="新建知识库名称" />
+        </div>
+
+        <div class="form-section">
+          <h3 class="section-title">知识库分组</h3>
+          <a-select
+            v-model:value="newDatabase.group_id"
+            class="full-width"
+            :options="knowledgeGroupOptions"
+          />
         </div>
 
         <div v-if="selectedKbTypeInfo?.requires_embedding_model" class="form-grid two-columns">
@@ -407,7 +445,7 @@
           size="large"
           class="lucide-icon-btn"
           :disabled="!kbTypes.length"
-          @click="state.openNewDatabaseModel = true"
+          @click="openCreateDatabaseModal()"
         >
           <template #icon>
             <Plus :size="16" />
@@ -418,22 +456,45 @@
     </ResourceEmptyState>
 
     <!-- 数据库列表 -->
-    <ExtensionCardGrid v-else>
-      <InfoCard
-        v-for="database in filteredDatabases"
-        :key="database.kb_id"
-        :title="database.name"
-        :subtitle="cardSubtitle(database)"
-        :description="database.description || '暂无描述'"
-        :tags="cardTags(database)"
-        @click="navigateToDatabase(database)"
+    <div v-else class="knowledge-group-list">
+      <section
+        v-for="group in knowledgeGroupSections"
+        :key="group.group_id"
+        class="knowledge-group-section"
       >
-        <template #icon>
-          <component :is="getKbTypeIcon(database.kb_type || 'milvus')" :size="20" />
-        </template>
-        <template #status />
-      </InfoCard>
-    </ExtensionCardGrid>
+        <KnowledgeGroupTree
+          :group="group"
+          :kb-types="kbTypes"
+          :knowledge-group-options="knowledgeGroupOptions"
+          :expanded-group-ids="expandedGroupIds"
+          :card-subtitle="cardSubtitle"
+          :card-tags="cardTags"
+          :get-kb-type-icon="getKbTypeIcon"
+          @toggle-group="toggleGroupExpanded"
+          @create-group="openCreateGroupModal"
+          @create-database="openCreateDatabaseModal"
+          @rename-group="openRenameGroupModal"
+          @delete-group="handleDeleteGroup"
+          @move-database="handleMoveDatabase"
+          @navigate-database="navigateToDatabase"
+        />
+      </section>
+    </div>
+
+    <a-modal
+      :open="state.openRenameGroupModal"
+      title="重命名知识库分组"
+      :confirm-loading="groupState.renaming"
+      @ok="handleRenameGroup"
+      @cancel="cancelRenameGroup"
+      destroyOnClose
+    >
+      <a-input
+        v-model:value="editingGroup.name"
+        placeholder="分组名称"
+        @pressEnter="handleRenameGroup"
+      />
+    </a-modal>
   </div>
 </template>
 
@@ -444,7 +505,7 @@ import { storeToRefs } from 'pinia'
 import { useConfigStore } from '@/stores/config'
 import { useDatabaseStore } from '@/stores/database'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { Plus, Upload, AlertCircle } from 'lucide-vue-next'
+import { Plus, Upload, AlertCircle, FolderPlus } from 'lucide-vue-next'
 import { message } from 'ant-design-vue'
 import { databaseApi, typeApi } from '@/apis/knowledge_api'
 import { taskerApi } from '@/apis/tasker'
@@ -460,6 +521,8 @@ import dayjs, { parseToShanghai } from '@/utils/time'
 import AiTextarea from '@/components/AiTextarea.vue'
 import { getKbTypeLabel, getKbTypeIcon, getKbTypeColor, kbUtils } from '@/utils/kb_utils'
 import { CHUNK_PRESET_OPTIONS, getChunkPresetDescription } from '@/utils/chunk_presets'
+import { DEFAULT_KNOWLEDGE_GROUP_ID, buildKnowledgeGroupSections } from '@/utils/knowledgeGroups'
+import KnowledgeGroupTree from '@/components/knowledge/KnowledgeGroupTree.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -481,6 +544,11 @@ const knowledgeViewItems = [
 const kbTypes = computed(() => Object.keys(supportedKbTypes.value))
 const searchQuery = ref('')
 const typeFilter = ref(null)
+const knowledgeGroups = ref([])
+const groupState = reactive({ creating: false, renaming: false, movingDatabaseId: '' })
+const newGroup = reactive({ name: '', parent_group_id: undefined })
+const editingGroup = reactive({ group_id: '', name: '' })
+const expandedGroupIds = ref(new Set([DEFAULT_KNOWLEDGE_GROUP_ID]))
 
 const filteredDatabases = computed(() => {
   let list = databases.value
@@ -498,9 +566,22 @@ const filteredDatabases = computed(() => {
   return list
 })
 
+const knowledgeGroupSections = computed(() =>
+  buildKnowledgeGroupSections(knowledgeGroups.value, filteredDatabases.value)
+)
+
+const knowledgeGroupOptions = computed(() =>
+  knowledgeGroupSections.value.map((group) => ({
+    label: group.name,
+    value: group.group_id
+  }))
+)
+
 const state = reactive({
   openNewDatabaseModel: false,
-  openImportModal: false
+  openImportModal: false,
+  openNewGroupModal: false,
+  openRenameGroupModal: false
 })
 
 // 导入状态
@@ -662,6 +743,7 @@ const chunkPresetOptions = CHUNK_PRESET_OPTIONS.map(({ label, value }) => ({ lab
 const createEmptyDatabaseForm = () => ({
   name: '',
   description: '',
+  group_id: DEFAULT_KNOWLEDGE_GROUP_ID,
   embedding_model_spec: configStore.config?.embed_model,
   kb_type: '',
   storage: '',
@@ -716,6 +798,123 @@ const loadSupportedKbTypes = async () => {
   }
 }
 
+const loadKnowledgeGroups = async () => {
+  try {
+    const data = await databaseApi.getGroups()
+    knowledgeGroups.value = data.groups || []
+  } catch (error) {
+    console.error('加载知识库分组失败:', error)
+    knowledgeGroups.value = []
+    message.error('加载知识库分组失败，请稍后重试')
+  }
+}
+
+const cancelCreateGroup = () => {
+  state.openNewGroupModal = false
+  newGroup.name = ''
+  newGroup.parent_group_id = undefined
+}
+
+const openCreateGroupModal = (parentGroupId = undefined) => {
+  state.openNewGroupModal = true
+  newGroup.parent_group_id = parentGroupId
+}
+
+const handleCreateGroup = async () => {
+  const name = newGroup.name.trim()
+  if (!name) {
+    message.error('分组名称不能为空')
+    return
+  }
+  groupState.creating = true
+  try {
+    const group = await databaseApi.createGroup({
+      name,
+      parent_group_id: newGroup.parent_group_id || undefined
+    })
+    await loadKnowledgeGroups()
+    toggleGroupExpanded(group.parent_group_id || DEFAULT_KNOWLEDGE_GROUP_ID, true)
+    toggleGroupExpanded(group.group_id, true)
+    newDatabase.group_id = group.group_id
+    cancelCreateGroup()
+    message.success('分组创建成功')
+  } catch (error) {
+    message.error(error.message || '分组创建失败')
+  } finally {
+    groupState.creating = false
+  }
+}
+
+const openRenameGroupModal = (group) => {
+  editingGroup.group_id = group.group_id
+  editingGroup.name = group.name
+  state.openRenameGroupModal = true
+}
+
+const cancelRenameGroup = () => {
+  state.openRenameGroupModal = false
+  editingGroup.group_id = ''
+  editingGroup.name = ''
+}
+
+const handleRenameGroup = async () => {
+  const name = editingGroup.name.trim()
+  if (!name) {
+    message.error('分组名称不能为空')
+    return
+  }
+  groupState.renaming = true
+  try {
+    await databaseApi.renameGroup(editingGroup.group_id, { name })
+    await loadKnowledgeGroups()
+    cancelRenameGroup()
+    message.success('分组已重命名')
+  } catch (error) {
+    message.error(error.message || '分组重命名失败')
+  } finally {
+    groupState.renaming = false
+  }
+}
+
+const handleDeleteGroup = async (group) => {
+  try {
+    await databaseApi.deleteGroup(group.group_id)
+    await loadKnowledgeGroups()
+    message.success('分组已删除')
+  } catch (error) {
+    message.error(error.message || '分组删除失败')
+  }
+}
+
+const handleMoveDatabase = async (database, groupId) => {
+  if ((database.group_id || DEFAULT_KNOWLEDGE_GROUP_ID) === groupId) return
+  groupState.movingDatabaseId = database.kb_id
+  try {
+    await databaseApi.updateDatabase(database.kb_id, {
+      name: database.name,
+      description: database.description || '',
+      group_id: groupId
+    })
+    await databaseStore.loadDatabases()
+    message.success('知识库已移动')
+  } catch (error) {
+    message.error(error.message || '知识库移动失败')
+  } finally {
+    groupState.movingDatabaseId = ''
+  }
+}
+
+const toggleGroupExpanded = (groupId, forceExpanded = null) => {
+  const next = new Set(expandedGroupIds.value)
+  const shouldExpand = forceExpanded === null ? !next.has(groupId) : forceExpanded
+  if (shouldExpand) {
+    next.add(groupId)
+  } else {
+    next.delete(groupId)
+  }
+  expandedGroupIds.value = next
+}
+
 const resetNewDatabase = () => {
   Object.assign(newDatabase, createEmptyDatabaseForm())
   newDatabase.kb_type = kbTypes.value[0] || ''
@@ -733,6 +932,11 @@ const resetNewDatabase = () => {
 const cancelCreateDatabase = () => {
   state.openNewDatabaseModel = false
   resetNewDatabase()
+}
+
+const openCreateDatabaseModal = (groupId = DEFAULT_KNOWLEDGE_GROUP_ID) => {
+  state.openNewDatabaseModel = true
+  newDatabase.group_id = groupId
 }
 
 // 格式化创建时间
@@ -780,6 +984,7 @@ const buildRequestData = () => {
     database_name: newDatabase.name.trim(),
     description: newDatabase.description?.trim() || '',
     kb_type: newDatabase.kb_type,
+    group_id: newDatabase.group_id || DEFAULT_KNOWLEDGE_GROUP_ID,
     additional_params: {}
   }
 
@@ -908,6 +1113,7 @@ watch(
 
 onMounted(() => {
   loadSupportedKbTypes()
+  loadKnowledgeGroups()
   databaseStore.loadDatabases()
 })
 
@@ -1135,6 +1341,59 @@ defineExpose({
 
 .database-container {
   padding: 0;
+}
+
+.knowledge-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 0 32px;
+}
+
+.knowledge-group-section {
+  border-top: 1px solid var(--gray-150);
+}
+
+.knowledge-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px var(--page-padding) 0;
+}
+
+.knowledge-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--gray-700);
+
+  h2 {
+    margin: 0;
+    color: var(--gray-900);
+    font-size: 16px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    min-width: 24px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--gray-100);
+    color: var(--gray-600);
+    font-size: 12px;
+    line-height: 22px;
+    text-align: center;
+  }
+}
+
+.knowledge-group-empty {
+  padding: 28px var(--page-padding);
 }
 
 .loading-container {

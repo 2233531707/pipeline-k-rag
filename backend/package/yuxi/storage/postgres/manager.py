@@ -123,6 +123,24 @@ class PostgresManager(metaclass=SingletonMeta):
         stmts = [
             "CREATE EXTENSION IF NOT EXISTS postgis",
             """
+            CREATE TABLE IF NOT EXISTS knowledge_base_groups (
+                id SERIAL PRIMARY KEY,
+                group_id VARCHAR(64) UNIQUE NOT NULL,
+                parent_group_id VARCHAR(64),
+                name VARCHAR(255) UNIQUE NOT NULL,
+                is_default BOOLEAN NOT NULL DEFAULT FALSE,
+                created_by VARCHAR(64),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """,
+            "ALTER TABLE IF EXISTS knowledge_base_groups ADD COLUMN IF NOT EXISTS parent_group_id VARCHAR(64)",
+            """
+            INSERT INTO knowledge_base_groups (group_id, name, is_default)
+            VALUES ('default', '默认分组', TRUE)
+            ON CONFLICT (group_id) DO NOTHING
+            """,
+            """
             CREATE TABLE IF NOT EXISTS knowledge_spatial_sources (
                 id SERIAL PRIMARY KEY,
                 source_id VARCHAR(64) UNIQUE NOT NULL,
@@ -211,6 +229,8 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS mindmap JSONB",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS sample_questions JSONB",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ",
+            "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS group_id VARCHAR(64)",
+            "UPDATE knowledge_bases SET group_id = 'default' WHERE group_id IS NULL",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS parent_id VARCHAR(64)",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS original_filename VARCHAR(512)",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS file_type VARCHAR(64)",
@@ -387,6 +407,9 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS evaluation_runs ALTER COLUMN kb_id TYPE VARCHAR(80)",
             "CREATE INDEX IF NOT EXISTS idx_kb_type ON knowledge_bases(kb_type)",
             "CREATE INDEX IF NOT EXISTS idx_kb_name ON knowledge_bases(name)",
+            "CREATE INDEX IF NOT EXISTS idx_kb_group_id ON knowledge_bases(group_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kbg_default ON knowledge_base_groups(is_default)",
+            "CREATE INDEX IF NOT EXISTS idx_kbg_parent_group_id ON knowledge_base_groups(parent_group_id)",
             "CREATE INDEX IF NOT EXISTS idx_kf_kb_id ON knowledge_files(kb_id)",
             "CREATE INDEX IF NOT EXISTS idx_kf_parent ON knowledge_files(parent_id)",
             "CREATE INDEX IF NOT EXISTS idx_kf_status ON knowledge_files(status)",

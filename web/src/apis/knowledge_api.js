@@ -56,6 +56,42 @@ export const databaseApi = {
   },
 
   /**
+   * 获取知识库分组
+   * @returns {Promise} - 分组列表
+   */
+  getGroups: async () => {
+    return apiAdminGet('/api/knowledge/groups')
+  },
+
+  /**
+   * 创建知识库分组
+   * @param {Object} groupData - 分组数据
+   * @returns {Promise} - 创建结果
+   */
+  createGroup: async (groupData) => {
+    return apiAdminPost('/api/knowledge/groups', groupData)
+  },
+
+  /**
+   * 重命名知识库分组
+   * @param {string} groupId - 分组 ID
+   * @param {Object} groupData - 分组数据
+   * @returns {Promise} - 更新结果
+   */
+  renameGroup: async (groupId, groupData) => {
+    return apiAdminPut(`/api/knowledge/groups/${groupId}`, groupData)
+  },
+
+  /**
+   * 删除知识库分组
+   * @param {string} groupId - 分组 ID
+   * @returns {Promise} - 删除结果
+   */
+  deleteGroup: async (groupId) => {
+    return apiAdminDelete(`/api/knowledge/groups/${groupId}`)
+  },
+
+  /**
    * 使用 AI 生成或优化知识库描述
    * @param {string} name - 知识库名称
    * @param {string} currentDescription - 当前描述（可选）

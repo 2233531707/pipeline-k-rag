@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,12 +29,14 @@ class TestManifest:
         m = manifest.build_manifest(
             database_name="测试库",
             kb_type="milvus",
+            group_name="项目资料",
             file_count=5,
             chunk_count=100,
             entity_count=50,
             relationship_count=80,
         )
         assert m.package_version == "1"
+        assert m.group_name == "项目资料"
         assert m.stats["files"] == 5
         assert m.stats["chunks"] == 100
 

@@ -56,6 +56,7 @@ async def _create(graph_build_config):
         llm_model_spec=None,
         graph_build_config=graph_build_config,
         share_config=None,
+        group_id=None,
         current_user=_user(),
     )
 
@@ -66,6 +67,24 @@ async def test_create_without_graph_config_succeeds(monkeypatch):
     result = await _create(None)
     assert result["kb_id"] == "kb-created"
     configure.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_passes_group_id_to_manager(monkeypatch):
+    _patch_create_dependencies(monkeypatch)
+    await knowledge_router.create_database(
+        database_name="测试知识库",
+        description="",
+        embedding_model_spec="embed/model",
+        kb_type="milvus",
+        additional_params={},
+        llm_model_spec=None,
+        graph_build_config=None,
+        share_config=None,
+        group_id="group-1",
+        current_user=_user(),
+    )
+    assert knowledge_router.knowledge_base.create_database.await_args.kwargs["group_id"] == "group-1"
 
 
 @pytest.mark.asyncio

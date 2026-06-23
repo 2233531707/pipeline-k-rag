@@ -54,6 +54,11 @@ async def export_portable_package(kb_id: str, work_dir: str, *, created_by: str)
         raise ValueError("便携迁移包当前仅支持 Milvus 知识库")
 
     kb_name = db_info.get("name") or kb_id
+    group_name = None
+    if db_info.get("group_id"):
+        groups = (await knowledge_base.list_groups()).get("groups", [])
+        group = next((item for item in groups if item.get("group_id") == db_info.get("group_id")), None)
+        group_name = group.get("name") if group else None
     tmp_root = Path(work_dir) / f"export-{kb_id}"
     tmp_root.mkdir(parents=True, exist_ok=True)
 
@@ -211,6 +216,7 @@ async def export_portable_package(kb_id: str, work_dir: str, *, created_by: str)
         package_manifest = manifest.build_manifest(
             database_name=kb_name,
             kb_type="milvus",
+            group_name=group_name,
             file_count=file_count,
             chunk_count=chunk_count,
             entity_count=entity_count,

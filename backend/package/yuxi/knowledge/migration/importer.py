@@ -83,6 +83,7 @@ async def run_import(
         if database_meta_path.is_file():
             database_meta = schemas.DatabaseMeta.model_validate_json(database_meta_path.read_text(encoding="utf-8"))
 
+        group = await knowledge_base.ensure_group_by_name(package.group_name, created_by=created_by)
         created = await knowledge_base.create_database(
             _resolve_import_kb_name(package, target_name),
             database_meta.description,
@@ -90,6 +91,7 @@ async def run_import(
             embedding_model_spec=embedding_model_spec,
             created_by=created_by,
             created_by_department_id=created_by_department_id,
+            group_id=group["group_id"] if group else None,
             **database_meta.additional_params,
         )
         new_kb_id = created["kb_id"]

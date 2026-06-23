@@ -9,6 +9,7 @@ def build_manifest(
     database_name: str,
     kb_type: str,
     *,
+    group_name: str | None = None,
     file_count: int = 0,
     chunk_count: int = 0,
     entity_count: int = 0,
@@ -18,6 +19,7 @@ def build_manifest(
     return PackageManifest(
         database_name=database_name,
         kb_type=kb_type,
+        group_name=group_name,
         stats={
             "files": file_count,
             "chunks": chunk_count,

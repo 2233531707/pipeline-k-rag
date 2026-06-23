@@ -173,7 +173,9 @@ class KnowledgeBaseManager:
     async def get_databases(self) -> dict:
         """获取所有数据库信息"""
         from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
+        from yuxi.repositories.knowledge_base_group_repository import KnowledgeBaseGroupRepository
 
+        await KnowledgeBaseGroupRepository().ensure_default_group()
         kb_repo = KnowledgeBaseRepository()
         rows = await kb_repo.get_all()
         all_databases = []
@@ -201,8 +203,142 @@ class KnowledgeBaseManager:
             db_info["share_config"] = row.share_config or DEFAULT_SHARE_CONFIG.copy()
             db_info["additional_params"] = kb_instance.normalize_additional_params(row.additional_params)
             db_info["created_by"] = row.created_by
+            db_info["group_id"] = row.group_id
             all_databases.append(db_info)
         return {"databases": all_databases}
+
+    async def list_groups(self) -> dict:
+        from yuxi.repositories.knowledge_base_group_repository import KnowledgeBaseGroupRepository
+
+        group_repo = KnowledgeBaseGroupRepository()
+        await group_repo.ensure_default_group()
+        groups = await group_repo.get_all()
+        return {
+            "groups": [
+                {
+                    "group_id": group.group_id,
+                    "name": group.name,
+                    "is_default": group.is_default,
+                    "parent_group_id": group.parent_group_id,
+                }
+                for group in groups
+            ]
+        }
+
+    async def create_group(
+        self,
+        name: str,
+        created_by: str | None = None,
+        parent_group_id: str | None = None,
+    ) -> dict:
+        from yuxi.repositories.knowledge_base_group_repository import (
+            DEFAULT_KNOWLEDGE_BASE_GROUP_ID,
+            DEFAULT_KNOWLEDGE_BASE_GROUP_NAME,
+            KnowledgeBaseGroupRepository,
+        )
+
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("知识库分组名称不能为空")
+        group_repo = KnowledgeBaseGroupRepository()
+        await group_repo.ensure_default_group()
+        normalized_parent_group_id = (parent_group_id or "").strip() or None
+        if normalized_parent_group_id == DEFAULT_KNOWLEDGE_BASE_GROUP_ID:
+            normalized_parent_group_id = DEFAULT_KNOWLEDGE_BASE_GROUP_ID
+        if normalized_parent_group_id:
+            parent_group = await group_repo.get_by_group_id(normalized_parent_group_id)
+            if parent_group is None:
+                raise ValueError("父知识库分组不存在")
+        if normalized_name.lower() == DEFAULT_KNOWLEDGE_BASE_GROUP_NAME.lower() or await group_repo.name_exists(
+            normalized_name
+        ):
+            raise ValueError("知识库分组名称已存在")
+        group = await group_repo.create(
+            {
+                "name": normalized_name,
+                "parent_group_id": normalized_parent_group_id,
+                "is_default": False,
+                "created_by": created_by,
+            }
+        )
+        return {
+            "group_id": group.group_id,
+            "name": group.name,
+            "is_default": group.is_default,
+            "parent_group_id": group.parent_group_id,
+        }
+
+    async def ensure_group_by_name(self, name: str | None, created_by: str | None = None) -> dict | None:
+        from yuxi.repositories.knowledge_base_group_repository import (
+            DEFAULT_KNOWLEDGE_BASE_GROUP_NAME,
+            KnowledgeBaseGroupRepository,
+        )
+
+        normalized_name = (name or "").strip()
+        if not normalized_name or normalized_name.lower() == DEFAULT_KNOWLEDGE_BASE_GROUP_NAME.lower():
+            return None
+        group_repo = KnowledgeBaseGroupRepository()
+        await group_repo.ensure_default_group()
+        group = await group_repo.get_by_name(normalized_name)
+        if group is None:
+            return await self.create_group(normalized_name, created_by=created_by)
+        return {
+            "group_id": group.group_id,
+            "name": group.name,
+            "is_default": group.is_default,
+            "parent_group_id": group.parent_group_id,
+        }
+
+    async def rename_group(self, group_id: str, name: str) -> dict:
+        from yuxi.repositories.knowledge_base_group_repository import (
+            DEFAULT_KNOWLEDGE_BASE_GROUP_ID,
+            DEFAULT_KNOWLEDGE_BASE_GROUP_NAME,
+            KnowledgeBaseGroupRepository,
+        )
+
+        normalized_name = name.strip()
+        if group_id == DEFAULT_KNOWLEDGE_BASE_GROUP_ID:
+            raise ValueError("默认分组不能重命名")
+        if not normalized_name:
+            raise ValueError("知识库分组名称不能为空")
+        group_repo = KnowledgeBaseGroupRepository()
+        await group_repo.ensure_default_group()
+        group = await group_repo.get_by_group_id(group_id)
+        if group is None:
+            raise ValueError("知识库分组不存在")
+        if normalized_name.lower() == DEFAULT_KNOWLEDGE_BASE_GROUP_NAME.lower() or (
+            normalized_name.lower() != group.name.lower() and await group_repo.name_exists(normalized_name)
+        ):
+            raise ValueError("知识库分组名称已存在")
+        updated = await group_repo.update_name(group_id, normalized_name)
+        return {
+            "group_id": updated.group_id,
+            "name": updated.name,
+            "is_default": updated.is_default,
+            "parent_group_id": updated.parent_group_id,
+        }
+
+    async def delete_group(self, group_id: str) -> dict:
+        from yuxi.repositories.knowledge_base_group_repository import (
+            DEFAULT_KNOWLEDGE_BASE_GROUP_ID,
+            KnowledgeBaseGroupRepository,
+        )
+
+        if group_id == DEFAULT_KNOWLEDGE_BASE_GROUP_ID:
+            raise ValueError("默认分组不能删除")
+        group_repo = KnowledgeBaseGroupRepository()
+        await group_repo.ensure_default_group()
+        group = await group_repo.get_by_group_id(group_id)
+        if group is None:
+            raise ValueError("知识库分组不存在")
+        if group.is_default:
+            raise ValueError("默认分组不能删除")
+        if await group_repo.count_child_groups(group_id) > 0:
+            raise ValueError("知识库分组下仍有子分组，不能删除")
+        if await group_repo.count_databases(group_id) > 0:
+            raise ValueError("知识库分组下仍有知识库，不能删除")
+        await group_repo.delete(group_id)
+        return {"message": "删除成功"}
 
     @staticmethod
     def _database_info_accessible(user: dict, db_info: dict) -> bool:
@@ -334,6 +470,7 @@ class KnowledgeBaseManager:
         share_config: dict | None = None,
         created_by: str | None = None,
         created_by_department_id: int | str | None = None,
+        group_id: str | None = None,
         **kwargs,
     ) -> dict:
         """
@@ -348,11 +485,17 @@ class KnowledgeBaseManager:
             share_config: 共享配置
             created_by: 创建者 uid
             created_by_department_id: 创建者部门 ID
+            group_id: 知识库分组 ID
             **kwargs: 其他配置参数
 
         Returns:
             数据库信息字典
         """
+        from yuxi.repositories.knowledge_base_group_repository import (
+            DEFAULT_KNOWLEDGE_BASE_GROUP_ID,
+            KnowledgeBaseGroupRepository,
+        )
+
         if not KnowledgeBaseFactory.is_type_supported(kb_type):
             available_types = list(KnowledgeBaseFactory.get_available_types().keys())
             raise ValueError(f"Unsupported knowledge base type: {kb_type}. Available types: {available_types}")
@@ -366,6 +509,12 @@ class KnowledgeBaseManager:
             user_uid=created_by,
             department_id=created_by_department_id,
         )
+
+        group_repo = KnowledgeBaseGroupRepository()
+        await group_repo.ensure_default_group()
+        group_id = (group_id or DEFAULT_KNOWLEDGE_BASE_GROUP_ID).strip()
+        if not await group_repo.get_by_group_id(group_id):
+            raise ValueError("知识库分组不存在")
 
         kb_instance = self._get_or_create_kb_instance(kb_type)
         kwargs = kb_instance.normalize_additional_params(kwargs)
@@ -381,11 +530,19 @@ class KnowledgeBaseManager:
         from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 
         kb_repo = KnowledgeBaseRepository()
-        updated = await kb_repo.update(kb_id, {"share_config": share_config, "created_by": created_by})
+        updated = await kb_repo.update(
+            kb_id,
+            {
+                "share_config": share_config,
+                "created_by": created_by,
+                "group_id": group_id,
+            },
+        )
         if updated is None:
             await kb_repo.create(
                 {
                     "kb_id": kb_id,
+                    "group_id": group_id,
                     "name": database_name,
                     "description": description,
                     "kb_type": kb_type,
@@ -399,6 +556,7 @@ class KnowledgeBaseManager:
 
         logger.info(f"Created {kb_type} database: {database_name} ({kb_id}) with {kwargs}")
         db_info["share_config"] = share_config
+        db_info["group_id"] = group_id
         return db_info
 
     async def delete_database(self, kb_id: str) -> dict:
@@ -483,6 +641,7 @@ class KnowledgeBaseManager:
         # 添加数据库中的附加字段
         db_info["additional_params"] = kb_instance.normalize_additional_params(kb.additional_params)
         db_info["share_config"] = kb.share_config or DEFAULT_SHARE_CONFIG.copy()
+        db_info["group_id"] = kb.group_id
         db_info["mindmap"] = kb.mindmap
         db_info["sample_questions"] = kb.sample_questions or []
         db_info["query_params"] = kb.query_params
@@ -660,6 +819,7 @@ class KnowledgeBaseManager:
         update_llm_model_spec: bool = False,
         additional_params: dict | None = None,
         share_config: dict | None = None,
+        group_id: str | None = None,
         operator_uid: str | None = None,
         operator_department_id: int | str | None = None,
     ) -> dict:
@@ -700,6 +860,16 @@ class KnowledgeBaseManager:
                 user_uid=operator_uid,
                 department_id=operator_department_id,
             )
+
+        if group_id is not None:
+            from yuxi.repositories.knowledge_base_group_repository import KnowledgeBaseGroupRepository
+
+            normalized_group_id = group_id.strip()
+            group_repo = KnowledgeBaseGroupRepository()
+            await group_repo.ensure_default_group()
+            if not await group_repo.get_by_group_id(normalized_group_id):
+                raise ValueError("知识库分组不存在")
+            update_data["group_id"] = normalized_group_id
 
         # 保存到数据库
         await kb_repo.update(kb_id, update_data)

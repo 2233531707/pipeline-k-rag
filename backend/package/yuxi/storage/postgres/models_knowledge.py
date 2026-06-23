@@ -21,6 +21,25 @@ from yuxi.utils.datetime_utils import utc_now_naive
 JSON_VALUE = JSON().with_variant(JSONB, "postgresql")
 
 
+class KnowledgeBaseGroup(Base):
+    """知识库分组模型"""
+
+    __tablename__ = "knowledge_base_groups"
+    __table_args__ = (
+        UniqueConstraint("group_id", name="uq_knowledge_base_groups_group_id"),
+        UniqueConstraint("name", name="uq_knowledge_base_groups_name"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_id = Column(String(64), unique=True, nullable=False, index=True)
+    parent_group_id = Column(String(64), ForeignKey("knowledge_base_groups.group_id", ondelete="SET NULL"), index=True)
+    name = Column(String(255), nullable=False, index=True)
+    is_default = Column(Boolean, default=False, nullable=False, index=True)
+    created_by = Column(String(64))
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+
+
 class KnowledgeBase(Base):
     """知识库模型"""
 
@@ -29,6 +48,7 @@ class KnowledgeBase(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     kb_id = Column(String(80), unique=True, nullable=False, index=True)
+    group_id = Column(String(64), ForeignKey("knowledge_base_groups.group_id", ondelete="SET NULL"), index=True)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text)
     kb_type = Column(String(32), nullable=False, index=True)
