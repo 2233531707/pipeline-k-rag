@@ -29,10 +29,8 @@ export const searchRemoteSkills = async (query) => {
   return apiPost(`${USER_BASE_URL}/remote/search`, { query })
 }
 
-export const confirmSkillInstallDraft = async (draftId, shareConfig) => {
-  return apiPost(`${USER_BASE_URL}/install-drafts/${encodeURIComponent(draftId)}/confirm`, {
-    share_config: shareConfig
-  })
+export const confirmSkillInstallDraft = async (draftId, payload) => {
+  return apiPost(`${USER_BASE_URL}/install-drafts/${encodeURIComponent(draftId)}/confirm`, payload)
 }
 
 export const discardSkillInstallDraft = async (draftId) => {

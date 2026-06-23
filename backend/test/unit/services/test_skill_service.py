@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -190,6 +191,145 @@ async def test_normal_user_skill_upload_draft_defaults_to_user_share(tmp_path: P
         "user_uids": ["normal-user"],
     }
     assert draft["allowed_access_levels"] == ["user"]
+
+
+@pytest.mark.asyncio
+async def test_normal_user_cannot_confirm_remote_skill_draft(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(svc.sys_config, "save_dir", str(tmp_path))
+
+    class FakeRepo:
+        def __init__(self, _db):
+            pass
+
+        async def exists_slug(self, _slug: str) -> bool:
+            return False
+
+        async def create(self, **_kwargs) -> Skill:
+            raise AssertionError("普通用户不应能确认远程 Skill 草稿")
+
+    class FakePreparation:
+        def __init__(self, source_dir: Path):
+            self.results = [{"slug": "frontend-design", "success": True, "source_dir": source_dir}]
+
+        async def cleanup(self) -> None:
+            pass
+
+    source_dir = tmp_path / "remote-source" / "frontend-design"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "SKILL.md").write_text(
+        "---\nname: frontend-design\ndescription: demo skill\n---\n# Demo\n",
+        encoding="utf-8",
+    )
+
+    async def fake_prepare_remote_skills_batch(*, source, skills):
+        assert source == "anthropics/skills"
+        assert skills == ["frontend-design"]
+        return FakePreparation(source_dir)
+
+    monkeypatch.setattr(svc, "SkillRepository", FakeRepo)
+    monkeypatch.setattr(
+        "yuxi.agents.skills.remote_install.prepare_remote_skills_batch",
+        fake_prepare_remote_skills_batch,
+    )
+
+    operator = _user("normal-user", role="user")
+    draft = await svc.prepare_remote_skill_install(
+        None,
+        source="anthropics/skills",
+        skills=["frontend-design"],
+        operator=operator,
+    )
+
+    with pytest.raises(ValueError, match="无权确认远程 Skill 安装草稿"):
+        await svc.confirm_skill_install_draft(
+            None,
+            draft_id=draft["draft_id"],
+            share_config=draft["default_share_config"],
+            operator=operator,
+            high_risk_confirmed=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_admin_remote_confirm_requires_high_risk_confirmation_and_logs_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(svc.sys_config, "save_dir", str(tmp_path))
+
+    class FakeRepo:
+        def __init__(self, _db):
+            pass
+
+        async def exists_slug(self, _slug: str) -> bool:
+            return False
+
+        async def create(self, **kwargs) -> Skill:
+            return Skill(**kwargs, updated_by=kwargs["created_by"])
+
+    class FakePreparation:
+        def __init__(self, source_dir: Path):
+            self.results = [{"slug": "frontend-design", "success": True, "source_dir": source_dir}]
+
+        async def cleanup(self) -> None:
+            pass
+
+    source_dir = tmp_path / "remote-source" / "frontend-design"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "SKILL.md").write_text(
+        "---\nname: frontend-design\ndescription: demo skill\n---\n# Demo\n",
+        encoding="utf-8",
+    )
+
+    async def fake_prepare_remote_skills_batch(*, source, skills):
+        assert source == "anthropics/skills"
+        assert skills == ["frontend-design"]
+        return FakePreparation(source_dir)
+
+    logs: list[dict[str, object]] = []
+
+    async def fake_log_operation(_db, user_id, operation, details=None, request=None):
+        logs.append({"user_id": user_id, "operation": operation, "details": json.loads(details or "{}")})
+
+    monkeypatch.setattr(svc, "SkillRepository", FakeRepo)
+    monkeypatch.setattr(svc, "log_operation", fake_log_operation, raising=False)
+    monkeypatch.setattr(
+        "yuxi.agents.skills.remote_install.prepare_remote_skills_batch",
+        fake_prepare_remote_skills_batch,
+    )
+
+    operator = _user("root", role="admin")
+    draft = await svc.prepare_remote_skill_install(
+        None,
+        source="anthropics/skills",
+        skills=["frontend-design"],
+        operator=operator,
+    )
+
+    with pytest.raises(ValueError, match="需要显式确认高风险操作"):
+        await svc.confirm_skill_install_draft(
+            None,
+            draft_id=draft["draft_id"],
+            share_config=draft["default_share_config"],
+            operator=operator,
+        )
+
+    results = await svc.confirm_skill_install_draft(
+        None,
+        draft_id=draft["draft_id"],
+        share_config=draft["default_share_config"],
+        operator=operator,
+        high_risk_confirmed=True,
+    )
+
+    assert results[0]["success"] is True
+    operations = [entry["operation"] for entry in logs]
+    assert "remote_skill_prepare" in operations
+    confirm_logs = [entry for entry in logs if entry["operation"] == "remote_skill_confirm"]
+    assert confirm_logs
+    assert confirm_logs[-1]["details"]["source"] == "anthropics/skills"
+    assert confirm_logs[-1]["details"]["skills"] == ["frontend-design"]
+    assert confirm_logs[-1]["details"]["high_risk_confirmed"] is True
+    assert confirm_logs[-1]["details"]["result"] == {"total": 1, "success": 1, "failed": 0}
 
 
 @pytest.mark.parametrize(

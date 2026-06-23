@@ -1,6 +1,7 @@
 import json
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 from yuxi.knowledge import knowledge_base
@@ -171,6 +172,57 @@ class EvaluationService:
             raise ValueError("文件中没有有效的问题数据")
         return questions, has_gold_chunks, has_gold_answers
 
+    async def upload_dataset_from_path(
+        self,
+        kb_id: str,
+        file_path: Path,
+        filename: str,
+        name: str,
+        description: str,
+        created_by: str,
+    ) -> dict[str, Any]:
+        questions = []
+        has_gold_chunks = False
+        has_gold_answers = False
+        with file_path.open("r", encoding="utf-8") as file:
+            for line_num, line in enumerate(file, 1):
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"第{line_num}行JSON格式错误: {exc}") from exc
+                if "query" not in item:
+                    raise ValueError(f"第{line_num}行缺少必需的'query'字段")
+                has_gold_chunks = has_gold_chunks or bool(item.get("gold_chunk_ids"))
+                has_gold_answers = has_gold_answers or bool(item.get("gold_answer"))
+                questions.append(item)
+
+        if not questions:
+            raise ValueError("文件中没有有效的问题数据")
+        dataset_id = f"dataset_{uuid.uuid4().hex[:8]}"
+        dataset_name = name.strip() or filename or dataset_id
+        row = await self.eval_repo.create_dataset_with_items(
+            {
+                "dataset_id": dataset_id,
+                "kb_id": kb_id,
+                "name": dataset_name,
+                "description": description,
+                "item_count": len(questions),
+                "has_gold_chunks": has_gold_chunks,
+                "has_gold_answers": has_gold_answers,
+                "build_metadata": {
+                    "source": "upload",
+                    "status": "completed",
+                    "progress": 100,
+                    "filename": filename,
+                },
+                "created_by": created_by,
+            },
+            self._build_dataset_items(dataset_id, kb_id, questions),
+        )
+        return self._dataset_to_dict(row)
+
     async def upload_dataset(
         self, kb_id: str, file_content: bytes, filename: str, name: str, description: str, created_by: str
     ) -> dict[str, Any]:
@@ -318,9 +370,10 @@ class EvaluationService:
                 "created_by": created_by,
             }
         )
-        task = await tasker.enqueue(
+        task, _created = await tasker.enqueue_unique(
             name="生成评估数据集",
             task_type="dataset_generation",
+            resource_key=f"dataset:{dataset_id}",
             payload={
                 "dataset_id": dataset_id,
                 "kb_id": kb_id,
@@ -489,9 +542,10 @@ class EvaluationService:
                 }
             )
 
-            await tasker.enqueue(
+            await tasker.enqueue_unique(
                 name=f"RAG评估({run_name})",
                 task_type="rag_evaluation",
+                resource_key=f"evaluation:{run_id}",
                 payload={
                     "run_id": run_id,
                     "name": run_name,

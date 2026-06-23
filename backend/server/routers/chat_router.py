@@ -1,5 +1,7 @@
+import hashlib
 import traceback
 import uuid
+from pathlib import Path
 from typing import Any
 from mimetypes import guess_type
 
@@ -13,6 +15,7 @@ from server.utils.auth_middleware import get_db, get_required_user
 from yuxi import config as conf
 from yuxi.models import select_model
 from yuxi.services.chat_service import get_agent_state_view, stream_agent_resume
+from yuxi.services.upload_audit_service import audit_upload
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.services.conversation_service import (
     confirm_tmp_thread_attachments_view,
@@ -267,6 +270,7 @@ class TmpAttachmentResponse(BaseModel):
     uploaded_at: str
     parse_supported: bool = False
     parse_methods: list[str] = Field(default_factory=list)
+    parse_unavailable_reason: str | None = None
 
 
 class TmpAttachmentParseRequest(BaseModel):
@@ -408,9 +412,38 @@ async def update_thread(
 
 
 @chat.post("/attachments/tmp", response_model=TmpAttachmentResponse)
-async def upload_tmp_attachment(file: UploadFile = File(...), current_user: User = Depends(get_required_user)):
+async def upload_tmp_attachment(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
     """上传附件到 MinIO tmp，暂不关联线程。"""
-    return await upload_tmp_attachment_view(file=file, current_uid=str(current_user.uid))
+    try:
+        result = await upload_tmp_attachment_view(file=file, current_uid=str(current_user.uid))
+    except HTTPException as exc:
+        file_name = Path(file.filename or "").name
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="chat_tmp_attachment",
+            filename=file_name,
+            detected_type=Path(file_name).suffix.lower(),
+            result="rejected",
+            reason=str(exc.detail),
+        )
+        raise
+    content_hash = result.pop("content_hash")
+    await audit_upload(
+        db=db,
+        user_id=getattr(current_user, "id", None),
+        entry="chat_tmp_attachment",
+        filename=result["file_name"],
+        size=result["file_size"],
+        detected_type=Path(result["file_name"]).suffix.lower(),
+        content_hash=content_hash,
+        result="success",
+    )
+    return result
 
 
 @chat.post("/attachments/tmp/parse", response_model=TmpAttachmentParseResponse)
@@ -452,12 +485,37 @@ async def upload_thread_attachment(
     current_user: User = Depends(get_required_user),
 ):
     """上传原始附件并关联到指定对话线程。"""
-    return await upload_thread_attachment_view(
-        thread_id=thread_id,
-        file=file,
+    try:
+        result = await upload_thread_attachment_view(
+            thread_id=thread_id,
+            file=file,
+            db=db,
+            current_uid=str(current_user.uid),
+        )
+    except HTTPException as exc:
+        file_name = Path(file.filename or "").name
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="chat_thread_attachment",
+            filename=file_name,
+            detected_type=Path(file_name).suffix.lower(),
+            result="rejected",
+            reason=str(exc.detail),
+        )
+        raise
+    content_hash = result.pop("content_hash", None)
+    await audit_upload(
         db=db,
-        current_uid=str(current_user.uid),
+        user_id=getattr(current_user, "id", None),
+        entry="chat_thread_attachment",
+        filename=result.get("file_name"),
+        size=result.get("file_size"),
+        detected_type=Path(result.get("file_name") or "").suffix.lower(),
+        content_hash=content_hash,
+        result="success",
     )
+    return result
 
 
 @chat.get("/thread/{thread_id}/attachments", response_model=AttachmentListResponse)
@@ -621,10 +679,16 @@ async def get_message_feedback(
 
 
 @chat.post("/image/upload", response_model=ImageUploadResponse)
-async def upload_image(file: UploadFile = File(...), current_user: User = Depends(get_required_user)):
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     上传并处理图片，返回base64编码的图片数据
     """
+    image_data = None
+    content_hash = None
     try:
         # 验证文件类型
         if not file.content_type or not file.content_type.startswith("image/"):
@@ -633,9 +697,11 @@ async def upload_image(file: UploadFile = File(...), current_user: User = Depend
         # 读取文件内容
         image_data = await file.read()
 
-        # 检查文件大小（10MB限制，超过后会压缩到5MB）
-        if len(image_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="图片文件过大，请上传小于10MB的图片")
+        content_hash = hashlib.sha256(image_data).hexdigest()
+
+        # 检查文件大小（5MB限制）
+        if len(image_data) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="图片文件过大，请上传小于5MB的图片")
 
         # 处理图片
         result = process_uploaded_image(image_data, file.filename)
@@ -650,9 +716,31 @@ async def upload_image(file: UploadFile = File(...), current_user: User = Depend
             f"大小: {result['size_bytes']} bytes"
         )
 
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="chat_image",
+            filename=file.filename,
+            size=len(image_data),
+            detected_type=Path(file.filename or "").suffix.lower(),
+            content_hash=content_hash,
+            result="success",
+        )
+
         return ImageUploadResponse(**result)
 
-    except HTTPException:
+    except HTTPException as exc:
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="chat_image",
+            filename=file.filename,
+            size=len(image_data) if image_data is not None else None,
+            detected_type=Path(file.filename or "").suffix.lower(),
+            content_hash=content_hash,
+            result="rejected",
+            reason=str(exc.detail),
+        )
         raise
     except Exception as e:
         logger.error(f"图片上传处理失败: {str(e)}, {traceback.format_exc()}")

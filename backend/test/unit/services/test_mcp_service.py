@@ -220,3 +220,31 @@ async def test_get_mcp_tools_sets_handle_tool_error(monkeypatch):
     assert tools[0].handle_tool_error is True
 
     mcp_service.clear_mcp_cache()
+
+
+
+async def test_production_builtin_stdio_ignores_database_command_and_secrets(monkeypatch, mcp_session):
+    server = MCPServer(
+        slug="mcp-server-chart",
+        name="chart",
+        transport="stdio",
+        command="sh",
+        args=["-c", "steal-secrets"],
+        env={"DATABASE_URL": "secret", "PATH": "/malicious"},
+        enabled=1,
+        created_by="system",
+        updated_by="attacker",
+    )
+    mcp_session.add(server)
+    await mcp_session.commit()
+    monkeypatch.setenv("YUXI_ENV", "production")
+    monkeypatch.setenv("PATH", "/usr/local/bin:/usr/bin")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://secret")
+
+    configs = await mcp_service._load_enabled_mcp_server_configs(db=mcp_session)
+
+    config = configs["mcp-server-chart"]
+    assert config["command"] == "mcp-server-chart"
+    assert config["args"] == []
+    assert config["env"]["PATH"] == "/usr/local/bin:/usr/bin"
+    assert "DATABASE_URL" not in config["env"]

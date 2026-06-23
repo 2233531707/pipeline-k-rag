@@ -540,13 +540,17 @@
 
     <a-modal
       v-model:open="draftConfirmVisible"
-      title="确认添加 Skill"
+      :title="isRemotePendingDraft ? '确认远程 Skill 安装' : '确认添加 Skill'"
       width="720px"
       :confirm-loading="draftConfirmLoading"
       :closable="!draftConfirmLoading"
       :mask-closable="!draftConfirmLoading"
       :keyboard="!draftConfirmLoading"
-      ok-text="确认添加"
+      :ok-text="isRemotePendingDraft ? '确认风险并安装' : '确认添加'"
+      :ok-button-props="{
+        danger: isRemotePendingDraft,
+        disabled: !canConfirmDraft || draftConfirmLoading
+      }"
       cancel-text="取消"
       @ok="confirmSkillDraft"
       @cancel="cancelSkillDraft"
@@ -556,6 +560,21 @@
           <span class="draft-source-label">来源</span>
           <span>{{ pendingDraft.source || sourceTypeLabel(pendingDraft.source_type) }}</span>
         </div>
+        <a-alert
+          v-if="isRemotePendingDraft"
+          type="error"
+          show-icon
+          message="高风险远程安装"
+          description="远程 Skill 来自任意来源，可能包含提示词、脚本或依赖安装行为。安装后会进入智能体运行环境，请仅在信任来源并完成内容审查后继续。"
+        />
+        <a-checkbox
+          v-if="isRemotePendingDraft"
+          v-model:checked="remoteHighRiskConfirmed"
+          class="draft-risk-confirmation"
+          :disabled="draftConfirmLoading"
+        >
+          我已理解上述风险，仍要安装这些远程 Skill
+        </a-checkbox>
         <div class="draft-items-list">
           <div
             v-for="item in pendingDraft.items"
@@ -611,6 +630,7 @@ import PageShoulder from '@/components/shared/PageShoulder.vue'
 import ShareConfigForm from '@/components/ShareConfigForm.vue'
 import MarkdownPreview from '@/components/common/MarkdownPreview.vue'
 import { formatExtensionCardTitle } from '@/utils/extensionDisplayName'
+import { buildSkillDraftConfirmation } from '@/utils/skillInstallDraft'
 
 const BookMarkedIcon = BookMarked
 const RECOMMENDED_SKILLS = [
@@ -699,7 +719,17 @@ const draftConfirmVisible = ref(false)
 const draftConfirmLoading = ref(false)
 const pendingDraft = ref(null)
 const draftShareConfig = ref({ access_level: 'user', department_ids: [], user_uids: [] })
+const remoteHighRiskConfirmed = ref(false)
 const shareConfigFormRef = ref(null)
+const draftConfirmation = computed(() =>
+  buildSkillDraftConfirmation(
+    pendingDraft.value,
+    draftShareConfig.value,
+    remoteHighRiskConfirmed.value
+  )
+)
+const isRemotePendingDraft = computed(() => draftConfirmation.value.isRemote)
+const canConfirmDraft = computed(() => draftConfirmation.value.canConfirm)
 
 const matchesSearch = (skill) => {
   if (!searchQuery.value) return true
@@ -1066,6 +1096,7 @@ const resetDraftConfirmation = () => {
   draftConfirmLoading.value = false
   pendingDraft.value = null
   draftShareConfig.value = { access_level: 'user', department_ids: [], user_uids: [] }
+  remoteHighRiskConfirmed.value = false
 }
 
 const normalizePendingDraft = (draftPayload) => {
@@ -1099,6 +1130,7 @@ const openDraftConfirmation = async (draftPayload) => {
   }
   pendingDraft.value = draft
   draftShareConfig.value = cloneShareConfig(draft.default_share_config)
+  remoteHighRiskConfirmed.value = false
   draftConfirmVisible.value = true
   return true
 }
@@ -1111,6 +1143,12 @@ const cancelSkillDraft = async () => {
 }
 
 const confirmSkillDraft = async () => {
+  const confirmation = draftConfirmation.value
+  if (!confirmation.canConfirm) {
+    message.warning('请先确认远程 Skill 安装风险')
+    return
+  }
+
   const validation = shareConfigFormRef.value?.validate?.()
   if (validation && !validation.valid) {
     message.warning(validation.message || '请完善 Skill 生效范围')
@@ -1124,7 +1162,7 @@ const confirmSkillDraft = async () => {
   try {
     const results = []
     for (const draftId of draftIds) {
-      const res = await skillApi.confirmSkillInstallDraft(draftId, draftShareConfig.value)
+      const res = await skillApi.confirmSkillInstallDraft(draftId, confirmation.payload)
       results.push(...(res?.data || []))
     }
     const successCount = results.filter((item) => item.success).length
@@ -1345,7 +1383,7 @@ const startInstallRemoteSkills = async () => {
 
     if (await openDraftConfirmation(drafts)) {
       remoteInstallModalVisible.value = false
-      message.success('解析完成，请确认 Skill 生效范围')
+      message.success('解析完成，请确认高风险操作和 Skill 生效范围')
     }
   } catch (error) {
     message.error(error?.response?.data?.detail || error.message || '解析远程 Skill 失败')
@@ -1678,6 +1716,16 @@ defineExpose({
   .draft-share-title {
     color: var(--gray-500);
     font-weight: 600;
+  }
+
+  .draft-risk-confirmation {
+    display: flex;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid var(--color-error-100);
+    border-radius: 6px;
+    background: var(--color-error-10);
+    color: var(--gray-800);
   }
 
   .draft-items-list {

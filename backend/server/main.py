@@ -24,6 +24,7 @@ from server.routers import router
 from server.utils.lifespan import lifespan
 from server.utils.auth_middleware import is_public_path
 from server.utils.common_utils import setup_logging
+from server.utils.cors import get_cors_allow_origins
 from server.utils.access_log_middleware import AccessLogMiddleware
 
 # 设置日志配置
@@ -44,7 +45,7 @@ app.include_router(router, prefix="/api")
 # CORS 设置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_allow_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

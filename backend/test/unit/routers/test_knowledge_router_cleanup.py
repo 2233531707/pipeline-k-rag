@@ -34,7 +34,7 @@ async def test_upload_file_rejects_oversized_file(monkeypatch):
         await knowledge_router.upload_file(upload, kb_id="kb_1", current_user=SimpleNamespace(uid="user_1"))
 
     assert exc_info.value.status_code == 400
-    assert "100 MB" in exc_info.value.detail
+    assert "512 MB" in exc_info.value.detail
 
 
 async def test_markdown_endpoint_rejects_oversized_file(monkeypatch):
@@ -45,7 +45,7 @@ async def test_markdown_endpoint_rejects_oversized_file(monkeypatch):
         await knowledge_router.mark_it_down(upload, current_user=SimpleNamespace(uid="user_1"))
 
     assert exc_info.value.status_code == 400
-    assert "100 MB" in exc_info.value.detail
+    assert "512 MB" in exc_info.value.detail
 
 
 async def test_index_documents_uses_uid_for_operator(monkeypatch):
@@ -57,13 +57,20 @@ async def test_index_documents_uses_uid_for_operator(monkeypatch):
     async def fake_get_database_info(kb_id: str) -> dict:
         return {"name": "测试知识库"}
 
-    async def fake_index_file(kb_id: str, file_id: str, operator_id: str | None = None, params: dict | None = None):
+    async def fake_index_file(
+        kb_id: str,
+        file_id: str,
+        operator_id: str | None = None,
+        params: dict | None = None,
+        context=None,
+    ):
         captured["operator_id"] = operator_id
         return {"file_id": file_id, "status": "indexed"}
 
-    async def fake_enqueue(name: str, task_type: str, payload: dict, coroutine):
+    async def fake_enqueue_unique(name: str, task_type: str, resource_key: str, payload: dict, coroutine):
+        assert resource_key == "knowledge:kb_1"
         await coroutine(FakeTaskContext())
-        return SimpleNamespace(id="task_1")
+        return SimpleNamespace(id="task_1"), True
 
     monkeypatch.setattr(
         knowledge_router,
@@ -72,7 +79,7 @@ async def test_index_documents_uses_uid_for_operator(monkeypatch):
     )
     monkeypatch.setattr(knowledge_router.knowledge_base, "get_database_info", fake_get_database_info)
     monkeypatch.setattr(knowledge_router.knowledge_base, "index_file", fake_index_file)
-    monkeypatch.setattr(knowledge_router.tasker, "enqueue", fake_enqueue)
+    monkeypatch.setattr(knowledge_router.tasker, "enqueue_unique", fake_enqueue_unique)
 
     result = await knowledge_router.index_documents(
         "kb_1",
@@ -104,12 +111,19 @@ async def test_add_documents_auto_index_returns_one_final_result_per_item(monkey
     async def fake_update_file_params(kb_id: str, file_id: str, params: dict, operator_id: str | None = None):
         return None
 
-    async def fake_index_file(kb_id: str, file_id: str, operator_id: str | None = None, params: dict | None = None):
+    async def fake_index_file(
+        kb_id: str,
+        file_id: str,
+        operator_id: str | None = None,
+        params: dict | None = None,
+        context=None,
+    ):
         return {"file_id": file_id, "status": "indexed"}
 
-    async def fake_enqueue(name: str, task_type: str, payload: dict, coroutine):
+    async def fake_enqueue_unique(name: str, task_type: str, resource_key: str, payload: dict, coroutine):
+        assert resource_key == "knowledge:kb_1"
         await coroutine(context)
-        return SimpleNamespace(id="task_1")
+        return SimpleNamespace(id="task_1"), True
 
     monkeypatch.setattr(
         knowledge_router,
@@ -121,7 +135,7 @@ async def test_add_documents_auto_index_returns_one_final_result_per_item(monkey
     monkeypatch.setattr(knowledge_router.knowledge_base, "parse_file", fake_parse_file)
     monkeypatch.setattr(knowledge_router.knowledge_base, "update_file_params", fake_update_file_params)
     monkeypatch.setattr(knowledge_router.knowledge_base, "index_file", fake_index_file)
-    monkeypatch.setattr(knowledge_router.tasker, "enqueue", fake_enqueue)
+    monkeypatch.setattr(knowledge_router.tasker, "enqueue_unique", fake_enqueue_unique)
 
     result = await knowledge_router.add_documents(
         "kb_1",

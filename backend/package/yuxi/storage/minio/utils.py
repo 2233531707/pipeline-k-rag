@@ -5,8 +5,10 @@ MinIO 存储工具函数
 
 import os
 import uuid
+from io import BytesIO
 
 from fastapi import UploadFile
+from PIL import Image, UnidentifiedImageError
 from yuxi.utils.upload_utils import read_upload_with_limit
 
 from .client import aupload_file_to_minio
@@ -41,5 +43,22 @@ async def upload_image_to_minio(
         too_large_message=too_large_message,
     )
     file_extension = upload.filename.rsplit(".", 1)[-1].lower() if upload.filename and "." in upload.filename else "jpg"
+    expected_formats = {
+        "jpg": {"JPEG"},
+        "jpeg": {"JPEG"},
+        "png": {"PNG"},
+        "bmp": {"BMP"},
+        "tif": {"TIFF"},
+        "tiff": {"TIFF"},
+        "webp": {"WEBP"},
+        "gif": {"GIF"},
+    }
+    try:
+        with Image.open(BytesIO(file_content)) as image:
+            image.verify()
+            if image.format not in expected_formats.get(file_extension, set()):
+                raise ValueError("图片真实类型与后缀不匹配")
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValueError("图片真实类型与后缀不匹配") from exc
     object_name = f"{object_prefix.strip('/')}/{uuid.uuid4()}.{file_extension}"
     return await aupload_file_to_minio("public", object_name, file_content)

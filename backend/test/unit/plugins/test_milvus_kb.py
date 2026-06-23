@@ -1,5 +1,10 @@
+import asyncio
+
+import pytest
 from pymilvus import CollectionSchema, DataType, FieldSchema, Function, FunctionType
 
+from yuxi.config.app import config
+from yuxi.knowledge.base import FileStatus, KnowledgeBase
 from yuxi.knowledge.implementations.milvus import (
     CONTENT_ANALYZER_PARAMS,
     CONTENT_SPARSE_FIELD,
@@ -148,6 +153,60 @@ async def test_hybrid_mode_filters_scores_below_similarity_threshold():
     assert chunks == []
 
 
+async def test_query_empty_hits_reports_ok_status():
+    collection = FakeCollection(distance=0.1)
+    kb = make_kb(collection)
+
+    chunks = await kb.aquery(
+        "no hit",
+        "db",
+        search_mode="vector",
+        final_top_k=3,
+        similarity_threshold=0.2,
+    )
+    output = KnowledgeBase.build_search_output("db", chunks)
+
+    assert chunks == []
+    assert output["status"] == "ok"
+    assert output["warnings"] == []
+    assert output["results"] == []
+
+
+async def test_query_total_backend_failure_reports_error_status():
+    class FailingCollection(FakeCollection):
+        def search(self, **kwargs):
+            raise RuntimeError("milvus unavailable")
+
+    kb = make_kb(FailingCollection())
+
+    chunks = await kb.aquery("broken", "db", search_mode="vector")
+    output = KnowledgeBase.build_search_output("db", chunks)
+
+    assert chunks == []
+    assert output["status"] == "error"
+    assert output["warnings"][0]["component"] == "milvus"
+    assert "milvus unavailable" in output["warnings"][0]["message"]
+    assert output["request_id"]
+
+
+async def test_query_partial_graph_failure_reports_degraded_status():
+    collection = FakeCollection()
+    kb = make_kb(collection)
+
+    async def fail_graph_retrieval(*args, **kwargs):
+        raise RuntimeError("neo4j unavailable")
+
+    kb._retrieve_graph_chunks = fail_graph_retrieval
+
+    chunks = await kb.aquery("graph query", "db", search_mode="vector", use_graph_retrieval=True)
+    output = KnowledgeBase.build_search_output("db", chunks)
+
+    assert len(chunks) == 1
+    assert output["status"] == "degraded"
+    assert output["warnings"][0]["component"] == "graph"
+    assert "neo4j unavailable" in output["warnings"][0]["message"]
+
+
 def test_query_params_config_uses_bm25_parameters():
     kb = MilvusKB.__new__(MilvusKB)
 
@@ -196,3 +255,135 @@ def test_collection_supports_bm25_requires_analyzed_content_sparse_field_and_fun
     collection = type("Collection", (), {"schema": schema})()
 
     assert kb._collection_supports_bm25(collection)
+
+
+class RecordingIndexContext:
+    def __init__(self):
+        self.messages = []
+        self.results = []
+
+    async def set_message(self, message: str) -> None:
+        self.messages.append(message)
+
+    async def set_result(self, result: dict) -> None:
+        self.results.append(result)
+
+
+async def test_index_file_embeds_and_writes_chunks_in_backend_batches(monkeypatch):
+    monkeypatch.setattr(config, "knowledge_embedding_batch_size", 2, raising=False)
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.databases_meta = {"db": {"embedding_model_spec": "provider/embed", "metadata": {}}}
+    kb.files_meta = {
+        "file-1": {
+            "kb_id": "db",
+            "filename": "demo.md",
+            "status": FileStatus.PARSED,
+            "markdown_file": "minio://parsed/demo.md",
+        }
+    }
+    kb._metadata_lock = asyncio.Lock()
+    kb._add_to_processing_queue = lambda file_id: None
+    kb._remove_from_processing_queue = lambda file_id: None
+    kb._read_markdown_from_minio = lambda markdown_file: asyncio.sleep(0, result="# demo")
+
+    chunks = [
+        {
+            "id": f"chunk-{idx}",
+            "chunk_id": f"chunk-{idx}",
+            "file_id": "file-1",
+            "chunk_index": idx,
+            "content": f"content {idx}",
+        }
+        for idx in range(5)
+    ]
+    kb._split_text_into_chunks = lambda markdown, file_id, filename, params: chunks
+
+    embedding_calls = []
+
+    async def fake_embed(texts):
+        embedding_calls.append(list(texts))
+        return [[float(len(embedding_calls))] for _ in texts]
+
+    kb._get_embedding_function = lambda embedding_model_spec: fake_embed
+    kb._get_milvus_collection = lambda kb_id: asyncio.sleep(0, result=FakeCollection())
+
+    cleanup_calls = []
+
+    async def fake_delete_chunks(kb_id, file_id):
+        cleanup_calls.append((kb_id, file_id))
+
+    kb.delete_file_chunks_only = fake_delete_chunks
+    inserted_batches = []
+
+    async def fake_insert(kb_id, file_id, collection, chunk_batch, embeddings):
+        inserted_batches.append([chunk["chunk_id"] for chunk in chunk_batch])
+
+    kb._insert_chunks_to_stores = fake_insert
+    kb._persist_file = lambda file_id: asyncio.sleep(0)
+
+    context = RecordingIndexContext()
+
+    result = await kb.index_file("db", "file-1", context=context)
+
+    assert result["status"] == FileStatus.INDEXED
+    assert cleanup_calls == [("db", "file-1")]
+    assert embedding_calls == [["content 0", "content 1"], ["content 2", "content 3"], ["content 4"]]
+    assert inserted_batches == [["chunk-0", "chunk-1"], ["chunk-2", "chunk-3"], ["chunk-4"]]
+    assert context.results[-1]["total_chunks"] == 5
+    assert context.results[-1]["completed_batches"] == 3
+    assert context.results[-1]["failed_batches"] == []
+
+
+async def test_index_file_records_failed_embedding_batch(monkeypatch):
+    monkeypatch.setattr(config, "knowledge_embedding_batch_size", 2, raising=False)
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.databases_meta = {"db": {"embedding_model_spec": "provider/embed", "metadata": {}}}
+    kb.files_meta = {
+        "file-1": {
+            "kb_id": "db",
+            "filename": "demo.md",
+            "status": FileStatus.PARSED,
+            "markdown_file": "minio://parsed/demo.md",
+        }
+    }
+    kb._metadata_lock = asyncio.Lock()
+    kb._add_to_processing_queue = lambda file_id: None
+    kb._remove_from_processing_queue = lambda file_id: None
+    kb._read_markdown_from_minio = lambda markdown_file: asyncio.sleep(0, result="# demo")
+    chunks = [
+        {
+            "id": f"chunk-{idx}",
+            "chunk_id": f"chunk-{idx}",
+            "file_id": "file-1",
+            "chunk_index": idx,
+            "content": f"content {idx}",
+        }
+        for idx in range(3)
+    ]
+    kb._split_text_into_chunks = lambda markdown, file_id, filename, params: chunks
+
+    embedding_calls = 0
+
+    async def fake_embed(texts):
+        nonlocal embedding_calls
+        embedding_calls += 1
+        if embedding_calls == 2:
+            raise RuntimeError("embedding batch exploded")
+        return [[1.0] for _ in texts]
+
+    kb._get_embedding_function = lambda embedding_model_spec: fake_embed
+    kb._get_milvus_collection = lambda kb_id: asyncio.sleep(0, result=FakeCollection())
+    kb.delete_file_chunks_only = lambda kb_id, file_id: asyncio.sleep(0)
+    kb._insert_chunks_to_stores = lambda kb_id, file_id, collection, chunk_batch, embeddings: asyncio.sleep(0)
+    kb._persist_file = lambda file_id: asyncio.sleep(0)
+    context = RecordingIndexContext()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await kb.index_file("db", "file-1", context=context)
+
+    stats = exc_info.value.index_stats
+    assert stats["completed_batches"] == 1
+    assert stats["failed_batches"] == [{"batch": 2, "offset": 2, "size": 1, "error": "embedding batch exploded"}]
+    assert kb.files_meta["file-1"]["status"] == FileStatus.ERROR_INDEXING
+    assert kb.files_meta["file-1"]["index_stats"] == stats
+    assert context.results[-1]["failed_batches"] == stats["failed_batches"]

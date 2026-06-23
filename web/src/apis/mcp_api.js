@@ -75,8 +75,11 @@ export const testMcpServer = async (name) => {
  * @param {boolean} enabled - 是否启用
  * @returns {Promise} - 切换结果
  */
-export const updateMcpServerStatus = async (name, enabled) => {
-  return apiAdminPut(`${BASE_URL}/${encodeURIComponent(name)}/status`, { enabled })
+export const updateMcpServerStatus = async (name, enabled, highRiskConfirmed = false) => {
+  return apiAdminPut(`${BASE_URL}/${encodeURIComponent(name)}/status`, {
+    enabled,
+    high_risk_confirmed: highRiskConfirmed
+  })
 }
 
 // =============================================================================

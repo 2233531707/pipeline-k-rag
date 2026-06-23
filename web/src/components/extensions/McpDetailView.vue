@@ -689,9 +689,20 @@ const handleDangerAction = async () => {
   confirmDeleteServer(server.value)
 }
 
-const handleSetServerEnabled = async (srv, enabled) => {
+const handleSetServerEnabled = async (srv, enabled, highRiskConfirmed = false) => {
+  if (enabled && srv.transport === 'stdio' && !highRiskConfirmed) {
+    Modal.confirm({
+      title: '启用高风险 stdio MCP',
+      content: 'stdio MCP 会在服务容器内启动本地进程。请确认该 MCP 为系统内置且来源可信。',
+      okText: '确认风险并启用',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => handleSetServerEnabled(srv, true, true)
+    })
+    return
+  }
   try {
-    const result = await mcpApi.updateMcpServerStatus(srv.slug, enabled)
+    const result = await mcpApi.updateMcpServerStatus(srv.slug, enabled, highRiskConfirmed)
     if (result.success) {
       message.success(result.message || `MCP 已${enabled ? '添加' : '移除'}`)
       await fetchServer()

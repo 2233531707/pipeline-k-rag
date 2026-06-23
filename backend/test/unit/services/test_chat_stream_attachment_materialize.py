@@ -63,14 +63,20 @@ async def test_materialize_attachment_files_keeps_original_file_when_markdown_co
 ) -> None:
     monkeypatch.setattr(cs.app_config, "save_dir", str(tmp_path))
 
-    upload = _DummyUpload(filename="demo.pdf", content_type="application/pdf", data=b"%PDF-test")
+    file_path = tmp_path / "staged.pdf"
+    file_path.write_bytes(b"%PDF-test")
+
+    async def _unsupported_parse(_path):
+        raise ValueError("unsupported")
+
+    monkeypatch.setattr(cs.Parser, "aparse", staticmethod(_unsupported_parse))
 
     result = await cs._materialize_attachment_files(
         thread_id="t-1",
         uid="u-1",
-        upload=upload,
         file_name="demo.pdf",
-        file_content=b"%PDF-test",
+        file_path=file_path,
+        parse_enabled=True,
     )
 
     assert result["status"] == "uploaded"
@@ -88,26 +94,20 @@ async def test_materialize_attachment_files_writes_markdown_copy_when_conversion
 ) -> None:
     monkeypatch.setattr(cs.app_config, "save_dir", str(tmp_path))
 
-    async def _fake_convert(_upload):
-        return cs.ConversionResult(
-            file_id="f-1",
-            file_name="demo.txt",
-            file_type="text/plain",
-            file_size=5,
-            markdown="hello\nworld",
-            truncated=False,
-        )
+    async def _fake_parse(_path):
+        return "hello\nworld"
 
-    monkeypatch.setattr(cs, "_convert_upload_to_markdown", _fake_convert)
+    monkeypatch.setattr(cs.Parser, "aparse", staticmethod(_fake_parse))
 
-    upload = _DummyUpload(filename="demo.txt", content_type="text/plain", data=b"hello")
+    file_path = tmp_path / "staged.txt"
+    file_path.write_bytes(b"hello")
 
     result = await cs._materialize_attachment_files(
         thread_id="t-1",
         uid="u-1",
-        upload=upload,
         file_name="demo.txt",
-        file_content=b"hello",
+        file_path=file_path,
+        parse_enabled=True,
     )
 
     assert result["status"] == "parsed"

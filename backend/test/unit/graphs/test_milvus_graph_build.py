@@ -10,6 +10,7 @@ from yuxi.knowledge.graphs.extractors import (
     LLMGraphExtractor,
     normalize_extraction_result,
 )
+from yuxi.config.app import config
 from yuxi.knowledge.graphs.milvus_graph_service import MilvusGraphService
 
 
@@ -165,6 +166,29 @@ async def test_milvus_graph_service_configure_persists_updated_concurrency():
     assert status["relationship_count"] == 2
 
 
+@pytest.mark.asyncio
+async def test_milvus_graph_service_configure_rejects_concurrency_above_deployment_limit(monkeypatch):
+    monkeypatch.setattr(config, "knowledge_graph_max_concurrency", 3, raising=False)
+    kb = SimpleNamespace(kb_type="milvus", additional_params={})
+
+    class Repo:
+        async def get_by_kb_id(self, kb_id):
+            return kb
+
+        async def update(self, kb_id, data):
+            raise AssertionError("over-limit graph config should not be persisted")
+
+    service = MilvusGraphService(kb_repo=Repo())
+
+    with pytest.raises(ValueError, match="不能超过部署上限 3"):
+        await service.configure(
+            "kb_test",
+            extractor_type="llm",
+            extractor_options={"model_spec": "test/model", "concurrency_count": 4},
+            created_by="user_1",
+        )
+
+
 def test_milvus_graph_service_writes_chunk_entity_and_relation():
     tx = MagicMock()
     session = MagicMock()
@@ -236,3 +260,113 @@ async def test_milvus_graph_service_get_stats_empty_kb_id():
     service = MilvusGraphService()
     result = await service.get_stats(kb_id=None)
     assert result == {"total_nodes": 0, "total_edges": 0, "entity_types": []}
+
+
+class RecordingGraphContext:
+    def __init__(self):
+        self.progress = []
+        self.results = []
+
+    async def raise_if_cancelled(self) -> None:
+        return None
+
+    async def set_progress(self, progress: float, message: str | None = None) -> None:
+        self.progress.append((progress, message))
+
+    async def set_result(self, result: dict) -> None:
+        self.results.append(result)
+
+
+@pytest.mark.asyncio
+async def test_milvus_graph_service_records_batch_progress_and_failed_chunks(monkeypatch):
+    monkeypatch.setattr(config, "knowledge_graph_max_concurrency", 2, raising=False)
+    kb = SimpleNamespace(
+        kb_type="milvus",
+        embedding_model_spec="provider/embed",
+        additional_params={
+            "graph_build_config": {
+                "locked": True,
+                "extractor_type": "llm",
+                "extractor_options": {"model_spec": "chat/model", "concurrency_count": 2},
+            }
+        },
+    )
+    valid_chunk = SimpleNamespace(
+        chunk_id="chunk-ok",
+        file_id="file-1",
+        kb_id="kb_test",
+        chunk_index=0,
+        content="张三任职于公司",
+        start_char_pos=0,
+        end_char_pos=8,
+        extraction_result={
+            "relations": [
+                {
+                    "source": {"text": "张三", "label": "Person"},
+                    "target": {"text": "公司", "label": "Organization"},
+                    "text": "任职于",
+                    "label": "WORKS_AT",
+                }
+            ]
+        },
+    )
+    failed_chunk = SimpleNamespace(
+        chunk_id="chunk-bad",
+        file_id="file-1",
+        kb_id="kb_test",
+        chunk_index=1,
+        content="坏数据",
+        start_char_pos=9,
+        end_char_pos=12,
+        extraction_result={"entities": [{"text": ""}], "relations": []},
+    )
+
+    class Repo:
+        async def get_by_kb_id(self, kb_id):
+            return kb
+
+    class ChunkRepo:
+        def __init__(self):
+            self.calls = 0
+            self.indexed = []
+
+        async def count_graph_pending_by_kb_id(self, kb_id):
+            return 2
+
+        async def list_graph_pending_by_kb_id(self, kb_id, batch_size):
+            self.calls += 1
+            return [valid_chunk, failed_chunk] if self.calls == 1 else []
+
+        async def mark_graph_indexed(self, chunk_id, ent_ids):
+            self.indexed.append(chunk_id)
+
+        async def update_extraction_result(self, chunk_id, normalized_result):
+            return None
+
+    class GraphRepo:
+        async def upsert_chunk_graph(self, **kwargs):
+            return None
+
+    class GraphVectorStore:
+        async def insert_missing_graph_records(self, **kwargs):
+            return None
+
+    chunk_repo = ChunkRepo()
+    service = MilvusGraphService(
+        kb_repo=Repo(),
+        chunk_repo=chunk_repo,
+        graph_repo=GraphRepo(),
+        graph_vector_store=GraphVectorStore(),
+    )
+    service.write_chunk_graph = lambda kb_id, chunk, extraction_result: ([], [])
+    context = RecordingGraphContext()
+
+    result = await service.build_pending_chunks("kb_test", batch_size=2, context=context)
+
+    assert result["success"] == 1
+    assert result["failed"] == 1
+    assert result["total_chunks"] == 2
+    assert result["completed_batches"] == 1
+    assert result["failed_batches"][0]["chunk_id"] == "chunk-bad"
+    assert chunk_repo.indexed == ["chunk-ok"]
+    assert context.results[-1]["failed_batches"] == result["failed_batches"]

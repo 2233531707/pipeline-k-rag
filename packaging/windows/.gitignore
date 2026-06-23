@@ -5,6 +5,7 @@
 build/
 dist/
 bundle/app/
+bundle/*.zip
 bundle/images/*.tar
 !bundle/images/.gitkeep
 __pycache__/

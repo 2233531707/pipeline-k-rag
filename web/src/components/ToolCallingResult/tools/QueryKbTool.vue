@@ -11,6 +11,26 @@
     </template>
     <template #result="{ resultContent }">
       <div class="query-kb-result">
+        <div
+          v-if="parsedResult(resultContent).status !== 'ok'"
+          class="retrieval-alert"
+          :class="`is-${parsedResult(resultContent).status}`"
+        >
+          <div class="alert-title">
+            <span>{{ retrievalStatusLabel(parsedResult(resultContent).status) }}</span>
+            <span v-if="parsedResult(resultContent).requestId" class="request-id">
+              {{ parsedResult(resultContent).requestId }}
+            </span>
+          </div>
+          <div
+            v-for="(warning, index) in parsedResult(resultContent).warnings"
+            :key="`warning-${index}-${warning.component}`"
+            class="alert-message"
+          >
+            {{ warning.component }}: {{ warning.message }}
+          </div>
+        </div>
+
         <KbResultGroupedList
           v-if="parsedResult(resultContent).chunks.length > 0"
           :chunks="parsedResult(resultContent).chunks"
@@ -82,7 +102,7 @@
           "
           class="no-results"
         >
-          未找到相关知识库内容
+          {{ parsedResult(resultContent).status === 'error' ? '检索失败' : '未找到相关知识库内容' }}
         </div>
       </div>
     </template>
@@ -125,6 +145,9 @@ const resourceLabel = computed(
 const queryText = computed(() => args.value.query_text || '')
 
 const EMPTY_RESULT = Object.freeze({
+  status: 'ok',
+  warnings: [],
+  requestId: '',
   chunks: [],
   entities: [],
   relationships: [],
@@ -163,7 +186,11 @@ const parseResult = (content) => {
     return lastParsedResult
   }
 
+  const status = ['ok', 'degraded', 'error'].includes(payload.status) ? payload.status : 'ok'
   const nextResult = {
+    status,
+    warnings: Array.isArray(payload.warnings) ? payload.warnings : [],
+    requestId: typeof payload.request_id === 'string' ? payload.request_id : '',
     chunks: normalizeChunks(payload),
     entities: Array.isArray(payload.entities) ? payload.entities : [],
     relationships: Array.isArray(payload.relationships) ? payload.relationships : [],
@@ -179,6 +206,12 @@ const parsedResult = (content) => parseResult(content)
 
 const hasGraphData = (result) =>
   result.entities.length > 0 || result.relationships.length > 0 || result.references.length > 0
+
+const retrievalStatusLabel = (status) => {
+  if (status === 'error') return '检索失败'
+  if (status === 'degraded') return '检索降级'
+  return '检索正常'
+}
 
 const getEntityName = (entity) => entity?.entity_name || entity?.name || '未命名实体'
 const getEntityType = (entity) => entity?.entity_type || entity?.type || '未分类'
@@ -202,6 +235,47 @@ const getReferenceLabel = (reference, index) => {
   background: var(--gray-0);
   border-radius: 8px;
   padding: 4px;
+
+  .retrieval-alert {
+    border: 1px solid var(--gray-150);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    background: var(--gray-25);
+
+    &.is-degraded {
+      border-color: var(--color-warning, #d28b00);
+      background: rgba(210, 139, 0, 0.08);
+    }
+
+    &.is-error {
+      border-color: var(--color-danger, #d93025);
+      background: rgba(217, 48, 37, 0.08);
+    }
+
+    .alert-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gray-800);
+    }
+
+    .request-id {
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--gray-500);
+    }
+
+    .alert-message {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--gray-700);
+      word-break: break-word;
+    }
+  }
 
   .graph-result-card {
     border: 1px solid var(--gray-150);

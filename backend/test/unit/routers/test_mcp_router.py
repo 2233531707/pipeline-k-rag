@@ -8,7 +8,7 @@ from server.utils.auth_middleware import get_admin_user, get_db, get_required_us
 from yuxi.storage.postgres.models_business import User
 
 
-def _build_app(*, allow_admin: bool = True) -> FastAPI:
+def _build_app(*, allow_admin: bool = True, role: str = "admin") -> FastAPI:
     app = FastAPI()
     app.include_router(mcp, prefix="/api")
 
@@ -24,7 +24,7 @@ def _build_app(*, allow_admin: bool = True) -> FastAPI:
             username="admin",
             uid="admin",
             password_hash="x",
-            role="admin",
+            role=role,
         )
 
     async def fake_required_user():
@@ -164,3 +164,94 @@ def test_update_mcp_server_rejects_extra_config_fields():
     )
 
     assert resp.status_code == 422, resp.text
+
+
+
+def test_create_custom_stdio_is_rejected_in_production(monkeypatch):
+    service_called = False
+
+    async def fake_create_mcp_server(*args, **kwargs):
+        nonlocal service_called
+        service_called = True
+
+    monkeypatch.setenv("YUXI_ENV", "production")
+    monkeypatch.setattr("server.routers.mcp_router.create_mcp_server", fake_create_mcp_server)
+
+    response = TestClient(_build_app()).post(
+        "/api/system/mcp-servers",
+        json={
+            "slug": "custom-stdio",
+            "name": "Custom stdio",
+            "transport": "stdio",
+            "command": "python",
+            "args": ["-m", "custom_mcp"],
+            "env": {"SECRET": "value"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "生产环境" in response.json()["detail"]
+    assert service_called is False
+
+
+
+def test_admin_cannot_enable_builtin_stdio_mcp(monkeypatch):
+    service_called = False
+
+    async def fake_get_server_or_404(db, slug):
+        return type("Server", (), {"transport": "stdio", "created_by": "system"})()
+
+    async def fake_set_server_enabled(*args, **kwargs):
+        nonlocal service_called
+        service_called = True
+
+    monkeypatch.setenv("YUXI_ENV", "production")
+    monkeypatch.setattr("server.routers.mcp_router.get_server_or_404", fake_get_server_or_404)
+    monkeypatch.setattr("server.routers.mcp_router.set_server_enabled", fake_set_server_enabled)
+
+    response = TestClient(_build_app()).put(
+        "/api/system/mcp-servers/mcp-server-chart/status",
+        json={"enabled": True, "high_risk_confirmed": True},
+    )
+
+    assert response.status_code == 403
+    assert "超级管理员" in response.json()["detail"]
+    assert service_called is False
+
+
+
+def test_superadmin_must_confirm_before_enabling_builtin_stdio_mcp(monkeypatch):
+    calls = []
+
+    class DummyServer:
+        transport = "stdio"
+        created_by = "system"
+
+        def to_dict(self):
+            return {"slug": "mcp-server-chart", "transport": "stdio", "enabled": True}
+
+    async def fake_get_server_or_404(db, slug):
+        return DummyServer()
+
+    async def fake_set_server_enabled(db, slug, enabled, updated_by=None):
+        calls.append((slug, enabled, updated_by))
+        return True, DummyServer()
+
+    monkeypatch.setenv("YUXI_ENV", "production")
+    monkeypatch.setattr("server.routers.mcp_router.get_server_or_404", fake_get_server_or_404)
+    monkeypatch.setattr("server.routers.mcp_router.set_server_enabled", fake_set_server_enabled)
+    client = TestClient(_build_app(role="superadmin"))
+
+    denied = client.put(
+        "/api/system/mcp-servers/mcp-server-chart/status",
+        json={"enabled": True},
+    )
+    accepted = client.put(
+        "/api/system/mcp-servers/mcp-server-chart/status",
+        json={"enabled": True, "high_risk_confirmed": True},
+    )
+
+    assert denied.status_code == 400
+    assert "显式确认" in denied.json()["detail"]
+    assert accepted.status_code == 200
+    assert calls == [("mcp-server-chart", True, "admin")]

@@ -8,14 +8,75 @@ from pathlib import Path
 
 from yuxi.storage.minio import get_minio_client
 from yuxi.utils import logger
+from yuxi.utils.zip_safety import ZipSafetyPolicy, scan_zip_file
 
 DEFAULT_IMAGE_BUCKET = "public"
 DEFAULT_IMAGE_PREFIX = "unknown/kb-images"
+SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+ORDINARY_KB_ZIP_MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+ORDINARY_KB_ZIP_MAX_FILE_COUNT = 500
+ORDINARY_KB_ZIP_MAX_MARKDOWN_COUNT = 50
+ORDINARY_KB_ZIP_MAX_IMAGE_COUNT = 300
+ORDINARY_KB_ZIP_MAX_MARKDOWN_BYTES = 20 * 1024 * 1024
+ORDINARY_KB_ZIP_MAX_IMAGE_BYTES = 20 * 1024 * 1024
+ORDINARY_KB_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
+ORDINARY_KB_ZIP_MAX_COMPRESSION_RATIO = 100
+ORDINARY_KB_ZIP_POLICY = ZipSafetyPolicy(
+    max_archive_bytes=ORDINARY_KB_ZIP_MAX_ARCHIVE_BYTES,
+    max_file_count=ORDINARY_KB_ZIP_MAX_FILE_COUNT,
+    max_single_file_bytes=max(ORDINARY_KB_ZIP_MAX_MARKDOWN_BYTES, ORDINARY_KB_ZIP_MAX_IMAGE_BYTES),
+    max_total_uncompressed_bytes=ORDINARY_KB_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES,
+    max_compression_ratio=ORDINARY_KB_ZIP_MAX_COMPRESSION_RATIO,
+    max_depth=32,
+    forbidden_extensions=frozenset({".exe", ".dll", ".so", ".dylib", ".bin", ".msi", ".com", ".scr"}),
+    forbidden_names=frozenset({".env", "secrets", "credentials", "token"}),
+    text_extensions=frozenset({".md", ".markdown", ".txt", ".json", ".yaml", ".yml", ".csv", ".tsv"}),
+    allowed_binary_extensions=frozenset(SUPPORTED_IMAGE_EXTENSIONS),
+    max_unknown_binary_bytes=1024 * 1024,
+)
 
 
 def _normalize_object_prefix(prefix: str | None) -> str:
     normalized = (prefix or DEFAULT_IMAGE_PREFIX).strip("/")
     return normalized or DEFAULT_IMAGE_PREFIX
+
+
+def _image_header_matches(suffix: str, header: bytes) -> bool:
+    suffix = suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return header.startswith(b"\xff\xd8\xff")
+    if suffix == ".png":
+        return header.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix == ".gif":
+        return header.startswith((b"GIF87a", b"GIF89a"))
+    if suffix == ".webp":
+        return header.startswith(b"RIFF") and header[8:12] == b"WEBP"
+    if suffix == ".bmp":
+        return header.startswith(b"BM")
+    return False
+
+
+def _validate_ordinary_zip_business_policy(zip_file: zipfile.ZipFile, report) -> None:
+    markdown_entries = [entry for entry in report.entries if not entry.is_dir and entry.suffix == ".md"]
+    image_entries = [
+        entry for entry in report.entries if not entry.is_dir and entry.suffix in SUPPORTED_IMAGE_EXTENSIONS
+    ]
+
+    if len(markdown_entries) > ORDINARY_KB_ZIP_MAX_MARKDOWN_COUNT:
+        raise ValueError(f"ZIP Markdown 文件数量超限: {len(markdown_entries)} > {ORDINARY_KB_ZIP_MAX_MARKDOWN_COUNT}")
+    if len(image_entries) > ORDINARY_KB_ZIP_MAX_IMAGE_COUNT:
+        raise ValueError(f"ZIP 图片文件数量超限: {len(image_entries)} > {ORDINARY_KB_ZIP_MAX_IMAGE_COUNT}")
+
+    for entry in markdown_entries:
+        if entry.file_size > ORDINARY_KB_ZIP_MAX_MARKDOWN_BYTES:
+            raise ValueError(f"ZIP Markdown 文件过大: {entry.filename}")
+    for entry in image_entries:
+        if entry.file_size > ORDINARY_KB_ZIP_MAX_IMAGE_BYTES:
+            raise ValueError(f"ZIP 图片文件过大: {entry.filename}")
+        with zip_file.open(entry.filename) as handle:
+            header = handle.read(16)
+        if not _image_header_matches(entry.suffix, header):
+            raise ValueError(f"ZIP 图片真实类型不匹配: {entry.filename}")
 
 
 async def process_zip_file(
@@ -39,11 +100,12 @@ async def process_zip_file(
         }
     """
     with zipfile.ZipFile(zip_path, "r") as zf:
-        for name in zf.namelist():
-            if name.startswith("/") or name.startswith("\\"):
-                raise ValueError(f"ZIP 包含不安全路径: {name}")
-            if ".." in Path(name).parts:
-                raise ValueError(f"ZIP 路径包含上级引用: {name}")
+        report = scan_zip_file(
+            zf,
+            ORDINARY_KB_ZIP_POLICY,
+            archive_size_bytes=Path(zip_path).stat().st_size,
+        )
+        _validate_ordinary_zip_business_policy(zf, report)
 
         md_files = [n for n in zf.namelist() if n.lower().endswith(".md")]
         if not md_files:
@@ -136,7 +198,7 @@ async def process_images(
     image_prefix: str,
 ) -> list[dict]:
     """处理图片：上传到MinIO并返回信息"""
-    supported_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+    supported_extensions = SUPPORTED_IMAGE_EXTENSIONS
 
     images = []
     image_names = [n for n in zip_file.namelist() if n.startswith(images_dir + "/")]

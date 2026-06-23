@@ -9,7 +9,7 @@
     "server:prod": "vite serve --host --port 8080",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/utils/__tests__/agentConfigUtils.test.js && node src/utils/__tests__/messageProcessor.spec.js && node src/utils/__tests__/pixelAvatar.test.js && node src/utils/__tests__/runStreamResume.test.js && node src/utils/__tests__/subagentThread.test.js && node src/utils/__tests__/svgRenderer.test.js",
+    "test": "node src/utils/__tests__/agentConfigUtils.test.js && node src/utils/__tests__/messageProcessor.spec.js && node src/utils/__tests__/pixelAvatar.test.js && node src/utils/__tests__/runStreamResume.test.js && node src/utils/__tests__/skillInstallDraft.test.js && node src/utils/__tests__/uploadQueuePolicy.test.js && node src/utils/__tests__/subagentThread.test.js && node src/utils/__tests__/svgRenderer.test.js",
     "lint": "eslint . --fix --cache",
     "format": "prettier --write --experimental-cli src/"
   },

@@ -426,6 +426,7 @@ import { useUserStore } from '@/stores/user'
 import { useDatabaseStore } from '@/stores/database'
 import { ocrApi } from '@/apis/system_api'
 import { fileApi, documentApi } from '@/apis/knowledge_api'
+import { MAX_UPLOAD_CONCURRENCY, resolveUploadRetryDelayMs } from '@/utils/uploadQueuePolicy'
 import { getWorkspaceTree } from '@/apis/workspace_api'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import {
@@ -603,7 +604,6 @@ const chunkLoading = computed(() => store.state.chunkLoading)
 // 上传模式
 const uploadMode = ref('file')
 const isSpatialUpload = computed(() => uploadMode.value === 'spatial')
-const MAX_UPLOAD_CONCURRENCY = 10
 
 // 文件列表
 const fileList = ref([])
@@ -1236,10 +1236,18 @@ const customRequest = async (options) => {
 
 const processUploadQueue = () => {
   while (activeUploadCount.value < MAX_UPLOAD_CONCURRENCY && uploadQueue.value.length > 0) {
+    const nextTask = uploadQueue.value[0]
+    const retryDelay = (nextTask?.retryAt || 0) - Date.now()
+    if (retryDelay > 0) {
+      setTimeout(processUploadQueue, retryDelay)
+      return
+    }
+
     const task = uploadQueue.value.shift()
     if (!task || task.canceled) {
       continue
     }
+    task.retryAt = null
 
     activeUploadCount.value += 1
     runUploadTask(task)
@@ -1320,6 +1328,20 @@ const runUploadTask = (task) => {
           onError(error)
           reject(error)
         }
+        return
+      }
+
+      const retryDelayMs = resolveUploadRetryDelayMs(
+        xhr.status,
+        xhr.getResponseHeader('Retry-After')
+      )
+      if (retryDelayMs !== null) {
+        task.retryAt = Date.now() + retryDelayMs
+        uploadQueue.value.unshift(task)
+        if (fileUid) {
+          uploadTaskStatus.value[fileUid] = 'queued'
+        }
+        resolve()
         return
       }
 

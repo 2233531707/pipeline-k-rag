@@ -1,23 +1,45 @@
-# 忽略 Git 相关的文件夹
+# Git and local metadata
 .git
 .gitignore
 
-# 忽略 Python 的缓存文件
+# Local environment and secrets
+.env*
+
+# Python cache and virtual environments
 __pycache__/
 *.pyc
 *.pyo
-
-# 忽略虚拟环境目录
+.venv/
 venv/
 env/
 
-# 忽略 node_modules 文件夹（前端项目）
+# Frontend dependencies and build output
 web/node_modules/
+web/dist/
+!web/dist/
+!web/dist/**
+node_modules/
+dist/
 
-# 忽略日志和临时文件
+# Runtime data, uploads, and database files
+docker/volumes/
+saves/
+uploads/
+outputs/
+*.db
+*.sqlite
+*.sqlite3
+*.yuxikb.zip
+
+# Logs, temporary files, and package outputs
 *.log
 *.tmp
+*.tar
+*.tar.gz
+packaging/windows/dist/
+packaging/windows/bundle/
+packaging/windows.zip
 
-# 忽略 Docker 本身的文件
+# Ignore root Docker files that are not needed as copied context inputs
 Dockerfile
 docker-compose.yml

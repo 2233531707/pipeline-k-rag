@@ -1,6 +1,7 @@
 """用户级配置与凭据路由"""
 
 import hashlib
+from pathlib import Path
 import re
 import secrets
 from typing import Any
@@ -12,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.utils.auth_middleware import get_db, get_required_user
+from yuxi.services.upload_audit_service import audit_upload
 from yuxi.storage.minio import upload_image_to_minio
 from yuxi.storage.postgres.models_business import APIKey, AgentEnv, User
 from yuxi.utils.datetime_utils import coerce_any_to_utc_datetime, format_utc_datetime, utc_now_naive
@@ -74,8 +76,16 @@ class AgentEnvResponse(BaseModel):
 
 
 @user_router.post("/upload-image", response_model=dict)
-async def upload_user_image(file: UploadFile = File(...), current_user: User = Depends(get_required_user)):
+async def upload_user_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
     try:
+        image_data = await file.read()
+        content_hash = hashlib.sha256(image_data).hexdigest()
+        await file.seek(0)
+
         image_url = await upload_image_to_minio(
             file,
             object_prefix=f"images/{current_user.uid}",
@@ -83,7 +93,29 @@ async def upload_user_image(file: UploadFile = File(...), current_user: User = D
             too_large_message="图片大小不能超过 5MB",
         )
     except ValueError as exc:
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="user_image_upload",
+            filename=file.filename,
+            size=len(image_data),
+            detected_type=Path(file.filename or "").suffix.lower(),
+            content_hash=content_hash,
+            result="rejected",
+            reason=str(exc),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await audit_upload(
+        db=db,
+        user_id=getattr(current_user, "id", None),
+        entry="user_image_upload",
+        filename=file.filename,
+        size=len(image_data),
+        detected_type=Path(file.filename or "").suffix.lower(),
+        content_hash=content_hash,
+        result="success",
+    )
 
     return {"success": True, "image_url": image_url, "url": image_url}
 

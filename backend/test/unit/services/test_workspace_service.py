@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -181,6 +182,12 @@ async def test_upload_workspace_files_writes_files(tmp_path: Path, monkeypatch) 
     assert result["entries"][0]["size"] == 5
     assert (root / "demo.txt").read_bytes() == b"hello"
     assert (root / "notes.md").read_bytes() == b"# notes"
+    assert result["_upload_audit"][0] == {
+        "filename": "demo.txt",
+        "size": 5,
+        "detected_type": ".txt",
+        "content_hash": hashlib.sha256(b"hello").hexdigest(),
+    }
 
 
 @pytest.mark.asyncio
@@ -201,7 +208,7 @@ async def test_upload_workspace_files_rejects_oversized_file_and_cleans_partial_
         await svc.upload_workspace_files(parent_path="/", files=uploads, current_user=user)
 
     assert exc_info.value.status_code == 400
-    assert "100 MB" in exc_info.value.detail
+    assert "512 MB" in exc_info.value.detail
     assert not (root / "small.txt").exists()
     assert not (root / "large.txt").exists()
 
@@ -220,3 +227,93 @@ async def test_upload_workspace_files_rejects_more_than_limit(tmp_path: Path, mo
 
     assert exc_info.value.status_code == 400
     assert f"一次最多上传 {svc.MAX_WORKSPACE_UPLOAD_FILES} 个文件" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_upload_workspace_files_rejects_disguised_binary_and_cleans_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(workspace_paths.conf, "save_dir", str(tmp_path))
+    user = _user()
+    root = svc._workspace_root(user)
+    uploads = [UploadFile(filename="payload.txt", file=BytesIO(b"MZ secret"))]
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.upload_workspace_files(parent_path="/", files=uploads, current_user=user)
+
+    assert exc_info.value.status_code == 400
+    assert "真实类型" in exc_info.value.detail
+    assert not (root / "payload.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_workspace_upload_route_audits_metadata_without_exposing_hash(monkeypatch) -> None:
+    from server.routers import workspace_router
+
+    audit_calls = []
+
+    async def fake_upload_workspace_files(*, parent_path, files, current_user):
+        return {
+            "success": True,
+            "entries": [{"name": "demo.txt", "path": "/demo.txt", "size": 5}],
+            "_upload_audit": [
+                {
+                    "filename": "demo.txt",
+                    "size": 5,
+                    "detected_type": ".txt",
+                    "content_hash": "hash-workspace",
+                }
+            ],
+        }
+
+    async def fake_audit_upload(**kwargs):
+        audit_calls.append(kwargs)
+
+    monkeypatch.setattr(workspace_router, "upload_workspace_files", fake_upload_workspace_files)
+    monkeypatch.setattr(workspace_router, "audit_upload", fake_audit_upload)
+
+    result = await workspace_router.upload_workspace_files_route(
+        parent_path="/",
+        files=[UploadFile(filename="demo.txt", file=BytesIO(b"hello"))],
+        current_user=SimpleNamespace(uid="user-1", id=5),
+        db=object(),
+    )
+
+    assert "_upload_audit" not in result
+    assert audit_calls[0]["entry"] == "workspace_upload"
+    assert audit_calls[0]["filename"] == "demo.txt"
+    assert audit_calls[0]["content_hash"] == "hash-workspace"
+    assert audit_calls[0]["result"] == "success"
+    assert "hello" not in str(audit_calls)
+
+
+@pytest.mark.asyncio
+async def test_workspace_upload_route_audits_rejected_upload_without_content(monkeypatch) -> None:
+    from server.routers import workspace_router
+
+    audit_calls = []
+
+    async def fake_upload_workspace_files(*, parent_path, files, current_user):
+        raise HTTPException(status_code=400, detail="文件真实类型与后缀不匹配")
+
+    async def fake_audit_upload(**kwargs):
+        audit_calls.append(kwargs)
+
+    monkeypatch.setattr(workspace_router, "upload_workspace_files", fake_upload_workspace_files)
+    monkeypatch.setattr(workspace_router, "audit_upload", fake_audit_upload)
+
+    with pytest.raises(HTTPException):
+        await workspace_router.upload_workspace_files_route(
+            parent_path="/",
+            files=[UploadFile(filename="payload.txt", file=BytesIO(b"MZ secret"))],
+            current_user=SimpleNamespace(uid="user-1", id=5),
+            db=object(),
+        )
+
+    assert audit_calls[0]["entry"] == "workspace_upload"
+    assert audit_calls[0]["filename"] == "payload.txt"
+    assert audit_calls[0]["detected_type"] == ".txt"
+    assert audit_calls[0]["result"] == "rejected"
+    assert "真实类型" in audit_calls[0]["reason"]
+    assert "MZ secret" not in str(audit_calls)

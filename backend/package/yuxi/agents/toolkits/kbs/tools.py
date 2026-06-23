@@ -244,7 +244,7 @@ async def query_kb(
             result = retriever(query_text, **kwargs)
 
         if isinstance(result, dict) and result.get("kb_id") == target_kb_id and isinstance(result.get("results"), list):
-            return SearchOutputSchema(**result).model_dump()
+            return SearchOutputSchema(**result).model_dump(exclude_none=True)
         return KnowledgeBase.build_search_output(target_kb_id, result)
 
     except Exception as e:

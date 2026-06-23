@@ -17,6 +17,10 @@ export const taskerApi = {
     return apiAdminPost(`${BASE_URL}/${taskId}/cancel`, {})
   },
 
+  continueTask: async (taskId) => {
+    return apiAdminPost(`${BASE_URL}/${taskId}/continue`, {})
+  },
+
   deleteTask: async (taskId) => {
     return apiAdminDelete(`${BASE_URL}/${taskId}`)
   }

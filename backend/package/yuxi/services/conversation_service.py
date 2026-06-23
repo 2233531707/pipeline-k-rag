@@ -1,3 +1,5 @@
+import shutil
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,10 +23,16 @@ from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import utc_isoformat
 from yuxi.utils.logging_config import logger
 from yuxi.utils.paths import VIRTUAL_PATH_UPLOADS
-from yuxi.utils.upload_utils import read_upload_with_limit, write_upload_to_path
+from yuxi.utils.upload_utils import (
+    UPLOAD_TEMP_DIR,
+    calculate_path_sha256,
+    validate_upload_file_type,
+    write_upload_to_path,
+)
 
 ATTACHMENT_ALLOWED_EXTENSIONS: tuple[str, ...] = ()
-MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_ATTACHMENT_SIZE_BYTES = 512 * 1024 * 1024
+MAX_ATTACHMENT_PARSE_SIZE_BYTES = 100 * 1024 * 1024
 MAX_ATTACHMENT_MARKDOWN_CHARS = 32_000  # TODO: 转 MARKDOWN的时候，不应该裁剪
 TMP_ATTACHMENT_PREFIX = "tmp/chat_attachments"
 TMP_ATTACHMENT_PARSE_EXTENSIONS = (".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif")
@@ -62,7 +70,7 @@ async def _write_upload_to_disk(upload: UploadFile, dest: Path) -> int:
         upload,
         dest,
         max_size_bytes=MAX_ATTACHMENT_SIZE_BYTES,
-        too_large_message="附件过大，当前仅支持 5 MB 以内的文件",
+        too_large_message="附件过大，当前仅支持 512 MB 以内的文件",
     )
 
 
@@ -289,6 +297,7 @@ def serialize_attachment(record: dict) -> dict:
         "original_artifact_url": record.get("original_artifact_url"),
         "minio_url": record.get("minio_url"),
         "request_id": record.get("request_id"),
+        "content_hash": record.get("content_hash"),
     }
 
 
@@ -296,17 +305,17 @@ async def _materialize_attachment_files(
     *,
     thread_id: str,
     uid: str,
-    upload: UploadFile,
     file_name: str,
-    file_content: bytes,
+    file_path: Path,
+    parse_enabled: bool,
 ) -> dict:
-    """将原始附件与可选 markdown 副本落盘到线程 user-data。"""
+    """将暂存的原始附件与可选 markdown 副本落盘到线程 user-data。"""
     ensure_thread_dirs(thread_id, uid)
 
     upload_virtual_path = _make_upload_virtual_path(file_name)
     uploads_dir = sandbox_uploads_dir(thread_id)
     upload_actual_path = uploads_dir / Path(upload_virtual_path).name
-    upload_actual_path.write_bytes(file_content)
+    shutil.copyfile(file_path, upload_actual_path)
 
     record = {
         "status": "uploaded",
@@ -318,10 +327,12 @@ async def _materialize_attachment_files(
         "original_storage_path": str(upload_actual_path),
         "minio_url": None,
     }
+    if not parse_enabled:
+        return record
 
     try:
-        await upload.seek(0)
-        conversion = await _convert_upload_to_markdown(upload)
+        markdown = await Parser.aparse(str(file_path))
+        markdown, truncated = _truncate_markdown(markdown)
     except ValueError:
         return record
     except Exception as exc:  # noqa: BLE001
@@ -333,7 +344,7 @@ async def _materialize_attachment_files(
         thread_id=thread_id,
         file_name=file_name,
     )
-    markdown_host_path.write_text(conversion.markdown, encoding="utf-8")
+    markdown_host_path.write_text(markdown, encoding="utf-8")
 
     record.update(
         {
@@ -342,8 +353,8 @@ async def _materialize_attachment_files(
             "artifact_url": _artifact_url(thread_id, markdown_virtual_path),
             "storage_path": str(markdown_host_path),
             "file_path": markdown_virtual_path,
-            "markdown": conversion.markdown,
-            "truncated": conversion.truncated,
+            "markdown": markdown,
+            "truncated": truncated,
             "markdown_storage_path": str(markdown_host_path),
         }
     )
@@ -356,7 +367,7 @@ def _materialize_tmp_attachment_files(
     uid: str,
     file_id: str,
     file_name: str,
-    file_content: bytes,
+    file_path: Path,
     parsed_markdown: str | None = None,
     truncated: bool = False,
 ) -> dict:
@@ -367,7 +378,7 @@ def _materialize_tmp_attachment_files(
     upload_virtual_path = _make_upload_virtual_path(storage_name)
     uploads_dir = sandbox_uploads_dir(thread_id)
     upload_actual_path = uploads_dir / Path(upload_virtual_path).name
-    upload_actual_path.write_bytes(file_content)
+    shutil.copyfile(file_path, upload_actual_path)
 
     record = {
         "status": "uploaded",
@@ -522,36 +533,46 @@ async def upload_tmp_attachment_view(*, file: UploadFile, current_uid: str) -> d
         raise HTTPException(status_code=400, detail="无法识别的文件名")
 
     file_name = _safe_file_name(file.filename)
+    suffix = Path(file_name).suffix.lower()
+    UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    temp_path = UPLOAD_TEMP_DIR / f"{uuid.uuid4().hex}{suffix}"
     try:
-        file_content = await read_upload_with_limit(
+        file_size = await write_upload_to_path(
             file,
+            temp_path,
             max_size_bytes=MAX_ATTACHMENT_SIZE_BYTES,
-            too_large_message="附件过大，当前仅支持 5 MB 以内的文件",
+            too_large_message="附件过大，当前仅支持 512 MB 以内的文件",
+        )
+        await validate_upload_file_type(temp_path, file_name)
+        content_hash = await calculate_path_sha256(temp_path)
+        tmp_file_id, object_name = _make_tmp_attachment_object(str(current_uid), file_name)
+        minio_client = get_minio_client()
+        bucket_name = _get_tmp_attachment_bucket()
+        upload_result = await minio_client.aupload_file_from_path(
+            bucket_name=bucket_name,
+            object_name=object_name,
+            file_path=str(temp_path),
+            content_type=file.content_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    file_size = len(file_content)
-    tmp_file_id, object_name = _make_tmp_attachment_object(str(current_uid), file_name)
-    minio_client = get_minio_client()
-    bucket_name = _get_tmp_attachment_bucket()
-    try:
-        upload_result = await minio_client.aupload_file(
-            bucket_name=bucket_name,
-            object_name=object_name,
-            data=file_content,
-            content_type=file.content_type,
-        )
     except StorageError as exc:
         raise HTTPException(status_code=500, detail=f"临时附件上传失败: {exc}") from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
 
-    suffix = Path(file_name).suffix.lower()
-    if suffix == ".pdf":
+    if file_size > MAX_ATTACHMENT_PARSE_SIZE_BYTES:
+        parse_methods = []
+        parse_unavailable_reason = "附件超过 100 MB，仅支持保存和下载，不能自动解析"
+    elif suffix == ".pdf":
         parse_methods = list(TMP_ATTACHMENT_PARSE_METHODS)
+        parse_unavailable_reason = None
     elif suffix in TMP_ATTACHMENT_IMAGE_EXTENSIONS:
         parse_methods = list(TMP_ATTACHMENT_OCR_METHODS)
+        parse_unavailable_reason = None
     else:
         parse_methods = []
+        parse_unavailable_reason = None
 
     return {
         "tmp_file_id": tmp_file_id,
@@ -564,8 +585,9 @@ async def upload_tmp_attachment_view(*, file: UploadFile, current_uid: str) -> d
         "uploaded_at": utc_isoformat(),
         "parse_supported": bool(parse_methods),
         "parse_methods": parse_methods,
+        "parse_unavailable_reason": parse_unavailable_reason,
+        "content_hash": content_hash,
     }
-
 
 async def parse_tmp_attachment_view(
     *,
@@ -614,12 +636,13 @@ async def parse_tmp_attachment_view(
     }
 
 
-async def confirm_tmp_thread_attachments_view(
+async def _confirm_tmp_thread_attachments_view(
     *,
     thread_id: str,
     attachments: list[dict],
     db: AsyncSession,
     current_uid: str,
+    staging_dir: Path,
 ) -> dict:
     """将选中的 tmp 附件正式关联到对话线程。"""
     if not attachments:
@@ -638,12 +661,14 @@ async def confirm_tmp_thread_attachments_view(
             raise HTTPException(status_code=400, detail="无效的临时附件 bucket")
 
         tmp_file_id, file_name = _require_tmp_object_section(object_name, str(current_uid), "original")
+        file_path = staging_dir / f"{tmp_file_id}_{file_name}"
         try:
-            file_content = await minio_client.adownload_file(bucket_name, object_name)
+            await minio_client.adownload_file_to_path(bucket_name, object_name, str(file_path))
         except StorageError as exc:
             raise HTTPException(status_code=400, detail=f"读取临时附件失败: {exc}") from exc
 
-        if len(file_content) > MAX_ATTACHMENT_SIZE_BYTES:
+        file_size = file_path.stat().st_size
+        if file_size > MAX_ATTACHMENT_SIZE_BYTES:
             max_size_mb = MAX_ATTACHMENT_SIZE_BYTES // (1024 * 1024)
             raise HTTPException(status_code=400, detail=f"附件过大，当前仅支持 {max_size_mb} MB 以内的文件")
 
@@ -666,7 +691,8 @@ async def confirm_tmp_thread_attachments_view(
             {
                 "file_name": file_name,
                 "file_type": item.get("file_type"),
-                "file_content": file_content,
+                "file_path": file_path,
+                "file_size": file_size,
                 "parsed_markdown": parsed_markdown,
                 "truncated": bool(item.get("truncated")),
             }
@@ -680,7 +706,7 @@ async def confirm_tmp_thread_attachments_view(
             uid=str(conversation.uid),
             file_id=file_id,
             file_name=prepared["file_name"],
-            file_content=prepared["file_content"],
+            file_path=prepared["file_path"],
             parsed_markdown=prepared["parsed_markdown"],
             truncated=prepared["truncated"],
         )
@@ -688,7 +714,7 @@ async def confirm_tmp_thread_attachments_view(
             "file_id": file_id,
             "file_name": prepared["file_name"],
             "file_type": prepared["file_type"],
-            "file_size": len(prepared["file_content"]),
+            "file_size": prepared["file_size"],
             "status": materialized["status"],
             "uploaded_at": utc_isoformat(),
             "path": materialized["path"],
@@ -718,6 +744,24 @@ async def confirm_tmp_thread_attachments_view(
     return {"attachments": [serialize_attachment(item) for item in added_records]}
 
 
+async def confirm_tmp_thread_attachments_view(
+    *,
+    thread_id: str,
+    attachments: list[dict],
+    db: AsyncSession,
+    current_uid: str,
+) -> dict:
+    UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=UPLOAD_TEMP_DIR) as staging_dir:
+        return await _confirm_tmp_thread_attachments_view(
+            thread_id=thread_id,
+            attachments=attachments,
+            db=db,
+            current_uid=current_uid,
+            staging_dir=Path(staging_dir),
+        )
+
+
 async def upload_thread_attachment_view(
     *,
     thread_id: str,
@@ -731,19 +775,29 @@ async def upload_thread_attachment_view(
         raise HTTPException(status_code=400, detail="无法识别的文件名")
 
     file_name = Path(file.filename).name
-    await file.seek(0)
-    file_content = await file.read()
-    file_size = len(file_content)
-    if file_size > MAX_ATTACHMENT_SIZE_BYTES:
-        max_size_mb = MAX_ATTACHMENT_SIZE_BYTES // (1024 * 1024)
-        raise HTTPException(status_code=400, detail=f"附件过大，当前仅支持 {max_size_mb} MB 以内的文件")
-    materialized = await _materialize_attachment_files(
-        thread_id=thread_id,
-        uid=str(conversation.uid),
-        upload=file,
-        file_name=file_name,
-        file_content=file_content,
-    )
+    suffix = Path(file_name).suffix.lower()
+    UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    temp_path = UPLOAD_TEMP_DIR / f"{uuid.uuid4().hex}{suffix}"
+    try:
+        file_size = await write_upload_to_path(
+            file,
+            temp_path,
+            max_size_bytes=MAX_ATTACHMENT_SIZE_BYTES,
+            too_large_message="附件过大，当前仅支持 512 MB 以内的文件",
+        )
+        await validate_upload_file_type(temp_path, file_name)
+        content_hash = await calculate_path_sha256(temp_path)
+        materialized = await _materialize_attachment_files(
+            thread_id=thread_id,
+            uid=str(conversation.uid),
+            file_name=file_name,
+            file_path=temp_path,
+            parse_enabled=file_size <= MAX_ATTACHMENT_PARSE_SIZE_BYTES,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
 
     attachment_record = {
         "file_id": uuid.uuid4().hex,
@@ -759,6 +813,7 @@ async def upload_thread_attachment_view(
         "original_artifact_url": materialized["original_artifact_url"],
         "original_storage_path": materialized["original_storage_path"],
         "minio_url": materialized["minio_url"],
+        "content_hash": content_hash,
     }
     for optional_key in ("file_path", "markdown", "truncated", "markdown_storage_path"):
         if optional_key in materialized:

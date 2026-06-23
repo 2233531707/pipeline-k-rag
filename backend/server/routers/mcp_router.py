@@ -1,5 +1,8 @@
 """MCP 服务器管理路由"""
 
+import json
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +19,7 @@ from yuxi.agents.mcp.service import (
     update_mcp_server,
 )
 from yuxi.storage.postgres.models_business import User
+from yuxi.services.operation_log_service import log_operation
 from yuxi.utils import logger
 from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 
@@ -63,7 +67,10 @@ class UpdateMcpServerRequest(BaseModel):
 
 
 class UpdateMcpServerStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = Field(..., description="是否启用")
+    high_risk_confirmed: bool = Field(False, description="是否确认 stdio MCP 高风险")
 
 
 # =============================================================================
@@ -77,6 +84,22 @@ async def get_server_or_404(db: AsyncSession, slug: str):
     if not server:
         raise HTTPException(status_code=404, detail=f"服务器 '{slug}' 不存在")
     return server
+
+
+async def _audit_mcp_action(
+    db: AsyncSession,
+    current_user: User,
+    action: str,
+    slug: str,
+    result: str,
+    **metadata,
+) -> None:
+    await log_operation(
+        db,
+        getattr(current_user, "id", None),
+        f"mcp_{action}",
+        json.dumps({"slug": slug, "result": result, **metadata}, ensure_ascii=False),
+    )
 
 
 # =============================================================================
@@ -129,6 +152,11 @@ async def create_mcp_server_route(
         raise HTTPException(status_code=400, detail=f"传输类型为 {request.transport} 时，url 必填")
     if request.transport == "stdio" and not request.command:
         raise HTTPException(status_code=400, detail="传输类型为 stdio 时，command 必填")
+    if (os.getenv("YUXI_ENV") or "development").strip().lower() == "production" and request.transport == "stdio":
+        await _audit_mcp_action(
+            db, current_user, "create", request.slug, "denied", reason="custom_stdio_in_production"
+        )
+        raise HTTPException(status_code=400, detail="生产环境禁止创建自定义 stdio MCP")
 
     try:
         server = await create_mcp_server(
@@ -148,6 +176,7 @@ async def create_mcp_server_route(
             icon=request.icon,
             created_by=current_user.username,
         )
+        await _audit_mcp_action(db, current_user, "create", request.slug, "success", transport=request.transport)
         return {"success": True, "data": server.to_dict()}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -186,8 +215,17 @@ async def update_mcp_server_route(
     if request.transport is not None and request.transport not in valid_transports:
         raise HTTPException(status_code=400, detail=f"传输类型必须是 {', '.join(valid_transports)} 之一")
 
+    fields_set = request.model_fields_set
+    if (os.getenv("YUXI_ENV") or "development").strip().lower() == "production":
+        current_server = await get_server_or_404(db, slug)
+        target_transport = request.transport or current_server.transport
+        if target_transport == "stdio" and fields_set.intersection({"transport", "command", "args", "env"}):
+            await _audit_mcp_action(
+                db, current_user, "update", slug, "denied", reason="custom_stdio_in_production"
+            )
+            raise HTTPException(status_code=400, detail="生产环境禁止修改 stdio MCP 的命令、参数或环境变量")
+
     try:
-        fields_set = request.model_fields_set
         update_kwargs = {}
         if "env" in fields_set:
             update_kwargs["env"] = request.env
@@ -209,6 +247,7 @@ async def update_mcp_server_route(
             updated_by=current_user.username,
             **update_kwargs,
         )
+        await _audit_mcp_action(db, current_user, "update", slug, "success", transport=server.transport)
         return {"success": True, "data": server.to_dict()}
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
@@ -233,6 +272,7 @@ async def delete_mcp_server_route(
         deleted = await delete_mcp_server(db, slug)
         if not deleted:
             raise HTTPException(status_code=404, detail=f"服务器 '{slug}' 不存在")
+        await _audit_mcp_action(db, current_user, "delete", slug, "success")
         return {"success": True, "message": f"服务器 '{slug}' 已删除"}
     except HTTPException:
         raise
@@ -258,6 +298,7 @@ async def test_mcp_server(
 
         try:
             tools = await get_all_mcp_tools(slug)
+            await _audit_mcp_action(db, current_user, "test", slug, "success", tool_count=len(tools))
             return {
                 "success": True,
                 "message": f"连接成功，共发现 {len(tools)} 个工具",
@@ -280,8 +321,30 @@ async def update_mcp_server_status_route(
     db: AsyncSession = Depends(get_db),
 ):
     """更新 MCP 服务器启用状态"""
+    is_production = (os.getenv("YUXI_ENV") or "development").strip().lower() == "production"
+    if is_production and request.enabled:
+        server = await get_server_or_404(db, slug)
+        if server.transport == "stdio":
+            if current_user.role != "superadmin":
+                await _audit_mcp_action(db, current_user, "status", slug, "denied", reason="not_superadmin")
+                raise HTTPException(status_code=403, detail="仅超级管理员可以启用生产 stdio MCP")
+            if not request.high_risk_confirmed:
+                await _audit_mcp_action(
+                    db, current_user, "status", slug, "denied", reason="high_risk_not_confirmed"
+                )
+                raise HTTPException(status_code=400, detail="启用生产 stdio MCP 需要显式确认高风险")
+
     try:
         is_enabled, server = await set_server_enabled(db, slug, request.enabled, current_user.username)
+        await _audit_mcp_action(
+            db,
+            current_user,
+            "status",
+            slug,
+            "success",
+            enabled=is_enabled,
+            high_risk_confirmed=request.high_risk_confirmed,
+        )
         return {
             "success": True,
             "enabled": is_enabled,

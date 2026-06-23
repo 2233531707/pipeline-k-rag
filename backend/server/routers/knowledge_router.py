@@ -11,11 +11,17 @@ from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import FileResponse
 from starlette.responses import StreamingResponse
 
 from yuxi.services.task_service import TaskContext, tasker
-from server.utils.auth_middleware import get_admin_user, get_required_user
+from yuxi.services.upload_audit_service import audit_upload
+from yuxi.services.upload_admission import (
+    UploadAdmissionExceeded,
+    large_upload_admission,
+)
+from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 from yuxi import config, knowledge_base
 from yuxi.knowledge.factory import KnowledgeBaseFactory
 from yuxi.knowledge.graphs.milvus_graph_service import GRAPH_TASK_TYPE, MilvusGraphService
@@ -40,10 +46,16 @@ from yuxi.models.providers.cache import model_cache
 from yuxi.knowledge.spatial.analysis_service import run_spatial_analysis
 from yuxi.repositories.knowledge_spatial_composition_repository import KnowledgeSpatialCompositionRepository
 from yuxi.repositories.knowledge_spatial_repository import KnowledgeSpatialRepository
-from yuxi.utils.upload_utils import MAX_UPLOAD_SIZE_BYTES, read_upload_with_limit, write_upload_to_path
+from yuxi.utils.upload_utils import (
+    MAX_UPLOAD_SIZE_BYTES,
+    UPLOAD_TEMP_DIR,
+    calculate_path_sha256,
+    validate_upload_file_type,
+    write_upload_to_path,
+)
 from yuxi.services.workspace_service import MAX_WORKSPACE_UPLOAD_SIZE_BYTES, resolve_workspace_file_path
 from yuxi.storage.postgres.models_business import User
-from yuxi.storage.minio.client import MinIOClient, StorageError, aupload_file_to_minio, get_minio_client
+from yuxi.storage.minio.client import MinIOClient, StorageError, get_minio_client
 from yuxi.utils import logger
 
 knowledge = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -151,6 +163,7 @@ async def _has_running_graph_build_task(kb_id: str) -> bool:
             task_type=GRAPH_TASK_TYPE,
             payload_match={"kb_id": kb_id},
             statuses=ACTIVE_GRAPH_BUILD_STATUSES,
+            resource_key=f"knowledge:{kb_id}",
         )
         is not None
     )
@@ -505,9 +518,7 @@ async def index_graph_build(
 
         batch_size = max(1, min(int(data.get("batch_size") or 20), 200))
         service = MilvusGraphService()
-        graph_status = await service.get_status(kb_id)
-        if not graph_status.get("locked"):
-            raise HTTPException(status_code=400, detail="请先确认并锁定图谱抽取配置")
+        await service.validate_build_config(kb_id)
 
         async def run_graph_index(context: TaskContext):
             await context.set_message("任务初始化")
@@ -524,6 +535,7 @@ async def index_graph_build(
             coroutine=run_graph_index,
             payload_match={"kb_id": kb_id},
             statuses=ACTIVE_GRAPH_BUILD_STATUSES,
+            resource_key=f"knowledge:{kb_id}",
         )
         if not created:
             raise HTTPException(status_code=409, detail="该知识库已有正在运行的图谱构建任务")
@@ -627,6 +639,7 @@ async def export_portable_database(
         coroutine=run_export,
         payload_match={"kb_id": kb_id},
         statuses={"pending", "running"},
+        resource_key=f"knowledge:{kb_id}",
     )
     return {"task_id": task.id, "status": task.status, "deduplicated": not created}
 
@@ -745,6 +758,7 @@ async def import_portable_database(
                 "package_sha256": package_sha256,
             },
             statuses={"pending", "running"},
+            resource_key=f"portable-import:{target_name or ''}:{package_sha256}",
         )
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -924,6 +938,7 @@ async def create_spatial_analysis(
         payload=payload,
         payload_match=payload,
         statuses={"pending", "running"},
+        resource_key=f"spatial:{kb_id}:{data.layer_a_id}:{data.layer_b_id}:{data.operation}:{data.target_name or ''}",
         coroutine=run_analysis,
     )
     return {"task_id": task.id, "status": task.status, "deduplicated": not created}
@@ -1078,7 +1093,7 @@ async def add_documents(
                             kb_id, file_id, indexing_params, operator_id=current_user.uid
                         )
                         result = await knowledge_base.index_file(
-                            kb_id, file_id, operator_id=current_user.uid, params=indexing_params
+                            kb_id, file_id, operator_id=current_user.uid, params=indexing_params, context=context
                         )
                         processed_items[record["index"]] = result
                     except Exception as index_error:
@@ -1124,9 +1139,10 @@ async def add_documents(
 
     try:
         database = await knowledge_base.get_database_info(kb_id)
-        task = await tasker.enqueue(
+        task, created = await tasker.enqueue_unique(
             name=f"知识库文档处理 ({database['name']})",
             task_type="knowledge_ingest",
+            resource_key=f"knowledge:{kb_id}",
             payload={
                 "kb_id": kb_id,
                 "items": items,
@@ -1139,6 +1155,7 @@ async def add_documents(
             "message": "任务已提交，请在任务中心查看进度",
             "status": "queued",
             "task_id": task.id,
+            "deduplicated": not created,
         }
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to enqueue {content_type}s: {e}, {traceback.format_exc()}")
@@ -1183,13 +1200,14 @@ async def parse_documents(kb_id: str, file_ids: list[str] = Body(...), current_u
 
     try:
         database = await knowledge_base.get_database_info(kb_id)
-        task = await tasker.enqueue(
+        task, created = await tasker.enqueue_unique(
             name=f"文档解析 ({database['name']})",
             task_type="knowledge_parse",
+            resource_key=f"knowledge:{kb_id}",
             payload={"kb_id": kb_id, "file_ids": file_ids},
             coroutine=run_parse,
         )
-        return {"message": "解析任务已提交", "status": "queued", "task_id": task.id}
+        return {"message": "解析任务已提交", "status": "queued", "task_id": task.id, "deduplicated": not created}
     except Exception as e:
         return {"message": f"提交失败: {e}", "status": "failed"}
 
@@ -1243,11 +1261,16 @@ async def index_documents(
                 await context.set_progress(progress, f"正在入库第 {idx}/{total} 个文档")
 
                 try:
-                    result = await knowledge_base.index_file(kb_id, file_id, operator_id=operator_id, params=params)
+                    result = await knowledge_base.index_file(
+                        kb_id, file_id, operator_id=operator_id, params=params, context=context
+                    )
                     processed_items.append(result)
                 except Exception as e:
                     logger.error(f"Index failed for {file_id}: {e}")
-                    processed_items.append({"file_id": file_id, "status": "failed", "error": str(e)})
+                    failed_item = {"file_id": file_id, "status": "failed", "error": str(e)}
+                    if getattr(e, "index_stats", None):
+                        failed_item["index_stats"] = e.index_stats
+                    processed_items.append(failed_item)
 
         except Exception as e:
             logger.exception(f"Index task failed: {e}")
@@ -1261,13 +1284,14 @@ async def index_documents(
 
     try:
         database = await knowledge_base.get_database_info(kb_id)
-        task = await tasker.enqueue(
+        task, created = await tasker.enqueue_unique(
             name=f"文档入库 ({database['name']})",
             task_type="knowledge_index",
+            resource_key=f"knowledge:{kb_id}",
             payload={"kb_id": kb_id, "file_ids": file_ids, "params": params},
             coroutine=run_index,
         )
-        return {"message": "入库任务已提交", "status": "queued", "task_id": task.id}
+        return {"message": "入库任务已提交", "status": "queued", "task_id": task.id, "deduplicated": not created}
     except Exception as e:
         return {"message": f"提交失败: {e}", "status": "failed"}
 
@@ -1751,10 +1775,10 @@ async def import_workspace_files(
 
         size = target.stat().st_size
         if size > MAX_WORKSPACE_UPLOAD_SIZE_BYTES:
-            raise HTTPException(status_code=400, detail="文件过大，当前仅支持 100 MB 以内的工作区文件")
+            raise HTTPException(status_code=400, detail="文件过大，当前仅支持 512 MB 以内的工作区文件")
 
-        file_bytes = await asyncio.to_thread(target.read_bytes)
-        content_hash = await calculate_content_hash(file_bytes)
+        await validate_upload_file_type(target, filename)
+        content_hash = await calculate_path_sha256(target)
 
         file_exists = await knowledge_base.file_existed_in_db(kb_id, content_hash)
         if file_exists:
@@ -1764,7 +1788,12 @@ async def import_workspace_files(
         timestamp = int(time.time() * 1000)
         minio_filename = f"{basename}_{timestamp}{ext}"
         object_name = f"{kb_id}/upload/{minio_filename}"
-        minio_url = await aupload_file_to_minio(bucket_name, object_name, file_bytes)
+        upload_result = await get_minio_client().aupload_file_from_path(
+            bucket_name,
+            object_name,
+            str(target),
+        )
+        minio_url = upload_result.url
 
         normalized_filename = filename.lower()
         same_name_files = await knowledge_base.get_same_name_files(kb_id, normalized_filename)
@@ -1777,7 +1806,7 @@ async def import_workspace_files(
                 "content_hash": content_hash,
                 "filename": normalized_filename,
                 "original_filename": basename,
-                "size": len(file_bytes),
+                "size": size,
                 "minio_filename": minio_filename,
                 "object_name": object_name,
                 "bucket_name": bucket_name,
@@ -1796,6 +1825,7 @@ async def upload_file(
     kb_id: str | None = Query(None),
     allow_jsonl: bool = Query(False),
     current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """上传文件"""
     if not file.filename:
@@ -1816,53 +1846,93 @@ async def upload_file(
     filename = f"{basename}{ext}".lower()
 
     try:
-        file_bytes = await read_upload_with_limit(
-            file,
-            max_size_bytes=MAX_UPLOAD_SIZE_BYTES,
-            too_large_message="文件过大，当前仅支持 100 MB 以内的文件",
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    content_hash = await calculate_content_hash(file_bytes)
-
-    file_exists = await knowledge_base.file_existed_in_db(kb_id, content_hash)
-    if file_exists:
+        await large_upload_admission.acquire(current_user.uid)
+    except UploadAdmissionExceeded as error:
         raise HTTPException(
-            status_code=409,
-            detail="数据库中已经存在了相同内容文件，File with the same content already exists in this database",
+            status_code=429,
+            detail=str(error),
+            headers={"Retry-After": str(error.retry_after_seconds)},
         )
 
-    # 直接上传到MinIO，添加时间戳区分版本
-    timestamp = int(time.time() * 1000)
-    minio_filename = f"{basename}_{timestamp}{ext}"
+    temp_path: Path | None = None
+    size: int | None = None
+    content_hash: str | None = None
+    try:
+        UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext, dir=UPLOAD_TEMP_DIR) as temp_file:
+            temp_path = Path(temp_file.name)
 
-    bucket_name = MinIOClient.KB_BUCKETS["documents"]
-    folder = kb_id if kb_id else "unknown"
-    object_name = f"{folder}/upload/{minio_filename}"
+        size = await write_upload_to_path(
+            file,
+            temp_path,
+            max_size_bytes=MAX_UPLOAD_SIZE_BYTES,
+            too_large_message="文件过大，当前仅支持 512 MB 以内的文件",
+        )
+        await validate_upload_file_type(temp_path, file.filename)
+        content_hash = await calculate_path_sha256(temp_path)
 
-    # 上传到MinIO
-    minio_url = await aupload_file_to_minio(bucket_name, object_name, file_bytes)
+        file_exists = await knowledge_base.file_existed_in_db(kb_id, content_hash)
+        if file_exists:
+            raise HTTPException(
+                status_code=409,
+                detail="数据库中已经存在了相同内容文件，File with the same content already exists in this database",
+            )
 
-    # 检测同名文件（基于原始文件名）
-    same_name_files = await knowledge_base.get_same_name_files(kb_id, filename)
-    has_same_name = len(same_name_files) > 0
+        timestamp = int(time.time() * 1000)
+        minio_filename = f"{basename}_{timestamp}{ext}"
+        bucket_name = MinIOClient.KB_BUCKETS["documents"]
+        folder = kb_id if kb_id else "unknown"
+        object_name = f"{folder}/upload/{minio_filename}"
+        upload_result = await get_minio_client().aupload_file_from_path(
+            bucket_name,
+            object_name,
+            str(temp_path),
+        )
+        minio_url = upload_result.url
 
-    return {
-        "message": "File successfully uploaded",
-        "file_path": minio_url,  # MinIO路径作为主要路径
-        "minio_path": minio_url,  # MinIO路径
-        "kb_id": kb_id,
-        "content_hash": content_hash,
-        "filename": filename,  # 原始文件名（小写）
-        "original_filename": basename,  # 原始文件名（去掉后缀）
-        "size": len(file_bytes),
-        "minio_filename": minio_filename,  # MinIO中的文件名（带时间戳）
-        "object_name": object_name,
-        "bucket_name": bucket_name,  # MinIO存储桶名称
-        "same_name_files": same_name_files,  # 同名文件列表
-        "has_same_name": has_same_name,  # 是否包含同名文件标志
-    }
+        same_name_files = await knowledge_base.get_same_name_files(kb_id, filename)
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="knowledge_file",
+            filename=file.filename,
+            size=size,
+            detected_type=ext,
+            content_hash=content_hash,
+            result="success",
+        )
+        return {
+            "message": "File successfully uploaded",
+            "file_path": minio_url,
+            "minio_path": minio_url,
+            "kb_id": kb_id,
+            "content_hash": content_hash,
+            "filename": filename,
+            "original_filename": basename,
+            "size": size,
+            "minio_filename": minio_filename,
+            "object_name": object_name,
+            "bucket_name": bucket_name,
+            "same_name_files": same_name_files,
+            "has_same_name": len(same_name_files) > 0,
+        }
+    except ValueError as e:
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="knowledge_file",
+            filename=file.filename,
+            size=size,
+            detected_type=ext,
+            content_hash=content_hash,
+            result="rejected",
+            reason=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        await large_upload_admission.release(current_user.uid)
 
 
 @knowledge.get("/files/supported-types")
@@ -1890,7 +1960,7 @@ async def mark_it_down(file: UploadFile = File(...), current_user: User = Depend
             file,
             temp_path,
             max_size_bytes=MAX_UPLOAD_SIZE_BYTES,
-            too_large_message="文件过大，当前仅支持 100 MB 以内的文件",
+            too_large_message="文件过大，当前仅支持 512 MB 以内的文件",
         )
 
         markdown_content = await Parser.aparse(temp_path)

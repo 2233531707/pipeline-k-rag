@@ -51,7 +51,9 @@ class ReadOnlyConnectors(KnowledgeBase):
         file_id: str,
         operator_id: str | None = None,
         params: dict | None = None,
+        context: Any | None = None,
     ) -> dict:
+        del context
         raise self._readonly_error()
 
     async def update_content(self, kb_id: str, file_ids: list[str], params: dict | None = None) -> list[dict]:

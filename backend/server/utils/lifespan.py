@@ -11,6 +11,7 @@ from yuxi.services.run_queue_service import close_queue_clients, get_redis_clien
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.knowledge import knowledge_base
 from yuxi.utils import logger
+from yuxi.utils.upload_utils import cleanup_stale_upload_files
 from yuxi.agents.backends.sandbox import init_sandbox_provider, shutdown_sandbox_provider
 from yuxi import get_version
 
@@ -18,6 +19,10 @@ from yuxi import get_version
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan事件管理器"""
+    removed_uploads = await cleanup_stale_upload_files()
+    if removed_uploads:
+        logger.info(f"Cleaned {removed_uploads} stale upload files")
+
     # 初始化数据库连接
     try:
         pg_manager.initialize()

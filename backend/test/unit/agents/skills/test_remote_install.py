@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,6 +35,38 @@ def test_parse_available_skills_from_cli_output() -> None:
         {"name": "claude-api", "description": "Build apps with the Claude API."},
         {"name": "frontend-design", "description": "Create distinctive frontend interfaces."},
     ]
+
+
+def test_create_isolated_workdir_uses_minimal_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret_names = [
+        "DATABASE_URL",
+        "POSTGRES_URL",
+        "POSTGRES_PASSWORD",
+        "JWT_SECRET_KEY",
+        "JWT_SECRET",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "SILICONFLOW_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "MILVUS_TOKEN",
+        "NEO4J_PASSWORD",
+        "MINIO_ACCESS_KEY",
+        "MINIO_SECRET_KEY",
+        "AWS_SECRET_ACCESS_KEY",
+    ]
+    for name in secret_names:
+        monkeypatch.setenv(name, "secret-value")
+
+    temp_home, env, workdir = svc._create_isolated_workdir()
+
+    try:
+        assert env["HOME"] == temp_home
+        assert str(workdir).startswith(temp_home)
+        assert env.get("PATH") == os.environ.get("PATH", "")
+        for name in secret_names:
+            assert name not in env
+    finally:
+        shutil.rmtree(temp_home, ignore_errors=True)
 
 
 @pytest.mark.asyncio

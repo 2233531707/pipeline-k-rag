@@ -123,3 +123,28 @@ make format        # 格式化代码
 1. 参考 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) 规范编写提交信息。
 2. 使用中文提交信息，标题简洁明了，描述具体改动内容和原因。
 3. 创建 PR 需要参考 [CONTRIBUTING.md](CONTRIBUTING.md) 中的 PR 模板[PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)，并在提交前完成其中的检查项。
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs 通过 `origin` remote 对应的 GitHub Issues 跟踪（`2233531707/pipeline-k-rag`）。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认五标签 triage 词汇表。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+本仓库使用 single-context 领域文档布局。详见 `docs/agents/domain.md`。
+
+### 工程化工作流
+
+1. 新会话或新任务开始时，先运行或参考 `/setup-matt-pocock-skills` 的方式检查项目现状。
+2. 如果缺少 `CLAUDE.md`、`CONTEXT.md`、`docs/agents/` 或 `docs/adr/`，先提出初始化方案，不要直接补业务实现。
+3. 不要直接修改业务代码；先输出项目术语、issue tracker、triage label、domain docs 的配置建议。
+4. 后续所有需求必须先经过 `/grill-with-docs` 对齐术语、范围和验收标准，再通过 `/to-prd` 和 `/to-issues` 拆分。
+5. 编码实现必须优先采用 `/tdd` 的红-绿-重构方式。
+6. 报错、性能问题、Docker 问题和高并发问题必须使用 `/diagnose` 的反馈环路。
+7. 对关键架构决策创建 ADR；不要把 ADR 当普通笔记。
+8. 所有输出使用中文，保持简洁、严谨、可执行。

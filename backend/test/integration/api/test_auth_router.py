@@ -101,6 +101,14 @@ async def test_user_is_locked_after_repeated_failed_logins(test_client, standard
     assert "登录被锁定" in still_locked_response.json()["detail"]
 
 
+
+async def test_me_requires_authentication(test_client):
+    response = await test_client.get("/api/auth/me")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "请登录后再访问"
+
+
 async def test_admin_can_login_and_fetch_profile(test_client, admin_headers):
     profile_response = await test_client.get("/api/auth/me", headers=admin_headers)
     assert profile_response.status_code == 200

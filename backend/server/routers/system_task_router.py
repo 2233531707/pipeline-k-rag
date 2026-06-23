@@ -35,6 +35,24 @@ async def cancel_task(task_id: str, current_user: User = Depends(get_admin_user)
     return {"task_id": task_id, "status": "cancelled"}
 
 
+@tasks.post("/{task_id}/continue")
+async def continue_task(task_id: str, current_user: User = Depends(get_admin_user)):
+    """Create a retry or safe continuation for a retryable failed task."""
+    try:
+        task, created = await tasker.continue_task(task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "task_id": task.id,
+        "previous_task_id": task_id,
+        "status": task.status,
+        "deduplicated": not created,
+        "task": task.to_summary_dict(),
+    }
+
+
 @tasks.delete("/{task_id}")
 async def delete_task(task_id: str, current_user: User = Depends(get_admin_user)):
     """Delete a task by id."""

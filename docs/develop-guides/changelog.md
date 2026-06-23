@@ -18,6 +18,16 @@
 
 ### 开发记录
 
+- 重建 Windows 交付安装包：最终文件统一命名为 `地下管网知识模型数据库.exe`，改为当前用户目录安装，增加普通用户使用教程和安装验证，并将打包内容收紧为运行时白名单，避免携带 `.git`、本地 `.env*`、迁移包、数据卷、日志及缓存；桌面启动器、安装包与离线镜像导出统一使用独立 `docker-compose.desktop.yml` 和 `.env.desktop`；启动器首次初始化会生成随机本地密钥，desktop/prod Compose 移除弱默认密钥，desktop 默认不暴露状态服务端口，并补齐 `.dockerignore` 的敏感文件与运行时产物排除规则；sandbox 执行边界固定由 provisioner 承接，Docker socket 仅挂载到 sandbox-provisioner，sandbox 容器默认使用 internal network。
+- 收紧远程 Skill 任意来源安装治理：远程 list/search/prepare 仅管理员可调用，远程草稿确认要求管理员显式 `high_risk_confirmed`，远程 CLI 改用最小环境白名单并记录远程 list/search/prepare/confirm 审计日志；补齐管理端高风险说明、风险确认勾选框和“确认风险并安装”入口，未确认前禁止提交；普通用户上传 Skill 草稿确认路径保持可用。
+- 增强 Skill ZIP 上传治理：普通用户上传 ZIP 默认生成个人私有草稿，上传扫描限制文件数量、大小和压缩比，拒绝可执行二进制、未知大二进制、隐藏敏感文件和不安全路径，脚本文件允许但标记风险，并记录上传成功/失败审计日志与失败清理结果。
+- 统一 ZIP 安全扫描策略：Skill ZIP、普通知识库 ZIP 与 `.yuxikb.zip` 迁移包复用共享扫描入口，各自保留独立阈值；普通知识库 ZIP 增加 Markdown/图片数量、大小和图片真实类型校验；迁移包保留 5 GiB 上限，并在 SHA-256 校验阶段拒绝清单外额外文件。
+- 增强 Tasker 长任务治理：任务支持按任务类型和业务资源唯一键去重，按任务类型配置硬超时；超时和服务重启中断会进入 `retryable_failed` 可重试失败状态并记录任务日志，任务中心可对仍在当前进程保留执行闭包的任务创建继续执行任务。
+- 增强文档索引与图谱构建治理：文档入库按后端配置批量生成 embedding，并记录 total chunks、完成批次和失败批次；图谱构建保存与运行时均校验部署级最大抽取并发，构建任务返回批次进度和失败 chunk 信息，避免超限配置进入后台任务。
+- 贯通知识库检索状态语义：`query_kb` 工具结果新增 `ok/degraded/error`、warnings 与 request_id；Milvus 真实无命中返回 ok，图谱或重排序部分失败保留可用结果并返回 degraded，总失败返回 error，前端工具结果卡展示降级和错误信息。
+- 收紧认证与 CORS 快速安全项：未认证访问 `/api/auth/me` 明确返回 401；后端 CORS 改为 `CORS_ALLOW_ORIGINS` 显式 allowlist，desktop 默认仅允许本机 Web origin，生产默认依赖同源反代或部署显式配置；前端基础 API 错误日志不再输出 Authorization 头或请求体。
+- 新增生产化整改基线门禁：聚合远程 Skill、ZIP 安全、Tasker、文档索引、检索状态、认证/CORS/日志和 desktop/prod Compose 静态策略测试，提供 `make production-baseline-gate` 本地入口并接入 GitHub Actions `production-baseline` job。
+- 完成第二批 P1 上传与 stdio MCP 治理：知识库、工作区和聊天附件上传统一 512 MB 上限、临时文件中转、真实类型校验、并发准入、崩溃残留清理与 metadata-only 审计；聊天附件自动解析限定 100 MB；评估 JSONL、Skill ZIP、头像和聊天图片补齐大小边界、真实类型校验与成功/拒绝审计；生产环境 stdio MCP 仅允许内置定义并要求超级管理员高风险确认。
 - 修复知识图谱对话中 SiliconFlow 流式工具调用偶发返回空工具名时直接终止的问题：SiliconFlow 在绑定工具时改用完整模型响应，并保留参数可唯一匹配时的工具名恢复保护；`query_knowledge_graph` 同时支持按知识库名称调用，并允许省略关键词以任意返回指定数量的节点。
 - 修复知识库迁移包超过 20 MB 时被 Web 代理拒绝的问题：迁移导入接口支持 5 GiB 包文件，并采用流式代理请求以降低并发上传时的临时磁盘占用。
 - 修复 Windows/NTFS 上 PostgreSQL bind mount 无法初始化的问题：开发与生产 Compose 改用独立命名卷，生产数据库镜像统一为 PostGIS 16-3.5，确保空间功能在生产栈可用。

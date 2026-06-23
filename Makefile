@@ -1,5 +1,5 @@
 
-.PHONY: up up-lite down logs lint format seed reset sync-test-up sync-test-rebuild sync-test-status sync-test-stop
+.PHONY: up up-lite down logs lint format seed reset sync-test-up sync-test-rebuild sync-test-status sync-test-stop production-baseline-gate
 
 PYTEST_ARGS ?=
 SYNC_TEST_COMPOSE = docker compose --env-file .env -p yuxi-sync-isolated -f docker-compose.yml -f .docker-compose.sync-test.yml
@@ -58,6 +58,9 @@ sync-test-stop:
 
 seed:
 	docker compose exec api uv run python scripts/seed_initial_users.py
+
+production-baseline-gate:
+	docker compose run --rm --no-deps -e UV_PROJECT_ENVIRONMENT=/tmp/yuxi-baseline-venv -v "$$(pwd):/repo" -w /repo/backend api uv run python ../scripts/production_baseline_gate.py --runner direct
 
 ######################
 # LINTING AND FORMATTING

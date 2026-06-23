@@ -163,7 +163,7 @@ checksums/sha256.json
 }
 ```
 
-对包内每个文件计算 SHA-256 校验和。
+对包内每个文件计算 SHA-256 校验和。导入预检会拒绝 `checksums/sha256.json` 清单外的额外文件；除清单文件自身外，包内所有实际文件都必须被 SHA-256 清单覆盖。
 
 ## 禁止导出清单
 
@@ -215,6 +215,7 @@ checksums/sha256.json
 - `manifest.package_version` 必须为 `"1"`
 - `manifest.stats` 中的文件数、chunk 数必须与实际匹配
 - 逐个文件验证 SHA-256 校验和
+- 拒绝 SHA-256 清单外的额外文件
 
 ### 导入隔离
 

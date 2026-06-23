@@ -17,7 +17,12 @@ from yuxi.services.mention_search_service import invalidate_workspace_mention_ca
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import utc_isoformat_from_timestamp
 from yuxi.utils.paths import VIRTUAL_PATH_WORKSPACE, WORKSPACE_DIR_NAME
-from yuxi.utils.upload_utils import MAX_UPLOAD_SIZE_BYTES, write_upload_to_buffer
+from yuxi.utils.upload_utils import (
+    MAX_UPLOAD_SIZE_BYTES,
+    calculate_path_sha256,
+    validate_upload_file_type,
+    write_upload_to_buffer,
+)
 
 EDITABLE_WORKSPACE_SUFFIXES = {".md", ".markdown", ".mdx", ".txt"}
 MAX_WORKSPACE_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_BYTES
@@ -250,7 +255,7 @@ async def create_workspace_directory(*, parent_path: str, name: str, current_use
     return {"success": True, "entry": _entry_for_path(root, target)}
 
 
-async def _write_workspace_upload(file: UploadFile, target: Path) -> None:
+async def _write_workspace_upload(file: UploadFile, target: Path) -> dict:
     created_file = False
     upload_completed = False
 
@@ -261,9 +266,17 @@ async def _write_workspace_upload(file: UploadFile, target: Path) -> None:
                 file,
                 buffer,
                 max_size_bytes=MAX_WORKSPACE_UPLOAD_SIZE_BYTES,
-                too_large_message="文件过大，当前仅支持 100 MB 以内的文件",
+                too_large_message="文件过大，当前仅支持 512 MB 以内的文件",
             )
+        await validate_upload_file_type(target, file.filename or target.name)
+        content_hash = await calculate_path_sha256(target)
         upload_completed = True
+        return {
+            "filename": target.name,
+            "size": target.stat().st_size,
+            "detected_type": target.suffix.lower(),
+            "content_hash": content_hash,
+        }
     except FileExistsError as exc:
         raise HTTPException(status_code=400, detail="同名文件或文件夹已存在") from exc
     except ValueError as exc:
@@ -295,9 +308,10 @@ async def upload_workspace_files(*, parent_path: str, files: list[UploadFile], c
         upload_targets.append((file, _resolve_new_child(root, parent, file_name)))
 
     completed_targets: list[Path] = []
+    audit_items: list[dict] = []
     try:
         for file, target in upload_targets:
-            await _write_workspace_upload(file, target)
+            audit_items.append(await _write_workspace_upload(file, target))
             completed_targets.append(target)
     except HTTPException:
         for target in completed_targets:
@@ -306,7 +320,11 @@ async def upload_workspace_files(*, parent_path: str, files: list[UploadFile], c
         raise
 
     await invalidate_workspace_mention_cache(str(current_user.uid))
-    return {"success": True, "entries": [_entry_for_path(root, target) for _file, target in upload_targets]}
+    return {
+        "success": True,
+        "entries": [_entry_for_path(root, target) for _file, target in upload_targets],
+        "_upload_audit": audit_items,
+    }
 
 
 async def download_workspace_file(*, path: str, current_user: User) -> StreamingResponse | FileResponse:

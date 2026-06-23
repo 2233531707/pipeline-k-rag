@@ -4,6 +4,7 @@ import asyncio
 import json
 from typing import Any
 
+from yuxi.config.app import config
 from yuxi.knowledge.graphs.extractors import GraphExtractor, GraphExtractorFactory, normalize_extraction_result
 from yuxi.knowledge.graphs.graph_utils import (
     build_graph_payload,
@@ -134,6 +135,7 @@ class MilvusGraphService:
         if normalized_extractor_type == "llm" and extractor_options.get("prompt"):
             raise ValueError("LLM 图谱抽取器不支持自定义完整 Prompt，请使用 schema 配置抽取约束")
         GraphExtractorFactory.create(normalized_extractor_type, extractor_options)
+        self._get_worker_count({"extractor_type": normalized_extractor_type, "extractor_options": extractor_options})
         config = {
             "locked": True,
             "extractor_type": normalized_extractor_type,
@@ -148,6 +150,12 @@ class MilvusGraphService:
         await self.kb_repo.update(kb_id, {"additional_params": additional_params})
         return config
 
+    async def validate_build_config(self, kb_id: str) -> dict[str, Any]:
+        kb = await self._get_milvus_kb(kb_id)
+        graph_config = self._get_locked_config(kb.additional_params or {})
+        self._get_worker_count(graph_config)
+        return graph_config
+
     async def build_pending_chunks(self, kb_id: str, *, batch_size: int, context=None) -> dict[str, Any]:
         kb = await self._get_milvus_kb(kb_id)
         config = self._get_locked_config(kb.additional_params or {})
@@ -157,6 +165,8 @@ class MilvusGraphService:
         total_pending = await self.chunk_repo.count_graph_pending_by_kb_id(kb_id)
         processed = 0
         failed = 0
+        completed_batches = 0
+        failed_batches: list[dict[str, Any]] = []
         failed_chunk_ids: set[str] = set()
         write_lock = asyncio.Lock()
 
@@ -168,6 +178,7 @@ class MilvusGraphService:
             if not unprocessed:
                 break
 
+            batch_number = completed_batches + 1
             queue: asyncio.Queue[Any] = asyncio.Queue()
             for chunk in unprocessed:
                 queue.put_nowait(chunk)
@@ -211,6 +222,14 @@ class MilvusGraphService:
                     except Exception as exc:
                         logger.error(f"Chunk 图谱构建失败 chunk_id={chunk.chunk_id}: {exc}")
                         failed_chunk_ids.add(chunk.chunk_id)
+                        failed_batches.append(
+                            {
+                                "batch": batch_number,
+                                "chunk_id": chunk.chunk_id,
+                                "file_id": chunk.file_id,
+                                "error": str(exc),
+                            }
+                        )
                         failed += 1
                     finally:
                         queue.task_done()
@@ -229,18 +248,42 @@ class MilvusGraphService:
                 await asyncio.gather(*workers, return_exceptions=True)
                 raise
 
-        remaining = await self.chunk_repo.count_graph_pending_by_kb_id(kb_id)
-        return {"kb_id": kb_id, "success": processed, "failed": failed, "remaining": remaining}
+            completed_batches += 1
+            if context is not None:
+                await context.set_result(
+                    {
+                        "kb_id": kb_id,
+                        "total_chunks": total_pending,
+                        "completed_batches": completed_batches,
+                        "success": processed,
+                        "failed": failed,
+                        "failed_batches": failed_batches,
+                    }
+                )
 
-    @staticmethod
-    def _get_worker_count(config: dict[str, Any]) -> int:
-        if (config.get("extractor_type") or "").lower() != "llm":
+        remaining = await self.chunk_repo.count_graph_pending_by_kb_id(kb_id)
+        return {
+            "kb_id": kb_id,
+            "success": processed,
+            "failed": failed,
+            "remaining": remaining,
+            "total_chunks": total_pending,
+            "completed_batches": completed_batches,
+            "failed_batches": failed_batches,
+        }
+
+    def _get_worker_count(self, graph_config: dict[str, Any]) -> int:
+        if (graph_config.get("extractor_type") or "").lower() != "llm":
             return 1
         try:
-            worker_count = int((config.get("extractor_options") or {}).get("concurrency_count") or 1)
+            worker_count = int((graph_config.get("extractor_options") or {}).get("concurrency_count") or 1)
         except (TypeError, ValueError):
             return 1
-        return max(1, min(worker_count, 1000))
+        worker_count = max(1, min(worker_count, 1000))
+        max_concurrency = int(getattr(config, "knowledge_graph_max_concurrency", 20) or 20)
+        if worker_count > max_concurrency:
+            raise ValueError(f"图谱抽取并发数 {worker_count} 不能超过部署上限 {max_concurrency}")
+        return worker_count
 
     @staticmethod
     def _runtime_extractor_options(config: dict[str, Any]) -> dict[str, Any]:

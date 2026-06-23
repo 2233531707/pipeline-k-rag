@@ -2,6 +2,7 @@ import asyncio
 import os
 import time
 import traceback
+import uuid
 from dataclasses import MISSING, dataclass, field, fields
 from functools import partial
 from typing import Any
@@ -20,7 +21,8 @@ from pymilvus import (
     utility,
 )
 
-from yuxi.knowledge.base import FileStatus, KnowledgeBase
+from yuxi.config.app import config
+from yuxi.knowledge.base import FileStatus, KnowledgeBase, RetrievalResults
 from yuxi.knowledge.chunking.ragflow_like.dispatcher import chunk_markdown
 from yuxi.knowledge.parser.unified import Parser
 from yuxi.knowledge.utils.kb_utils import resolve_processing_params
@@ -600,7 +602,12 @@ class MilvusKB(KnowledgeBase):
         return restored
 
     async def index_file(
-        self, kb_id: str, file_id: str, operator_id: str | None = None, params: dict | None = None
+        self,
+        kb_id: str,
+        file_id: str,
+        operator_id: str | None = None,
+        params: dict | None = None,
+        context: Any | None = None,
     ) -> dict:
         """
         Index parsed file (Status: INDEXING -> INDEXED/ERROR_INDEXING)
@@ -673,6 +680,7 @@ class MilvusKB(KnowledgeBase):
 
         # Add to processing queue
         self._add_to_processing_queue(file_id)
+        index_stats: dict[str, Any] | None = None
 
         try:
             # Read markdown
@@ -687,13 +695,49 @@ class MilvusKB(KnowledgeBase):
                 f"chunk_parser_config={params.get('chunk_parser_config')}"
             )
 
-            if chunks:
-                texts = [chunk["content"] for chunk in chunks]
-                embeddings = await embedding_function(texts)
+            batch_size = max(1, int(getattr(config, "knowledge_embedding_batch_size", 40) or 40))
+            total_batches = (len(chunks) + batch_size - 1) // batch_size if chunks else 0
+            index_stats = {
+                "kb_id": kb_id,
+                "file_id": file_id,
+                "total_chunks": len(chunks),
+                "batch_size": batch_size,
+                "total_batches": total_batches,
+                "completed_batches": 0,
+                "failed_batches": [],
+            }
 
-                # Clean up existing chunks if any (for re-indexing)
-                await self.delete_file_chunks_only(kb_id, file_id)
-                await self._insert_chunks_to_stores(kb_id, file_id, collection, chunks, embeddings)
+            # Clean up existing chunks before writing new batches so retries do not duplicate chunks.
+            await self.delete_file_chunks_only(kb_id, file_id)
+
+            for batch_number, offset in enumerate(range(0, len(chunks), batch_size), 1):
+                chunk_batch = chunks[offset : offset + batch_size]
+                try:
+                    embeddings = await embedding_function([chunk["content"] for chunk in chunk_batch])
+                    await self._insert_chunks_to_stores(kb_id, file_id, collection, chunk_batch, embeddings)
+                except Exception as batch_error:
+                    failed_batch = {
+                        "batch": batch_number,
+                        "offset": offset,
+                        "size": len(chunk_batch),
+                        "error": str(batch_error),
+                    }
+                    index_stats["failed_batches"].append(failed_batch)
+                    if context is not None:
+                        await context.set_result(index_stats)
+                    setattr(batch_error, "index_stats", index_stats)
+                    raise
+
+                index_stats["completed_batches"] = batch_number
+                if context is not None:
+                    await context.set_message(
+                        f"入库 Chunk {min(offset + len(chunk_batch), len(chunks))}/{len(chunks)}，"
+                        f"批次 {batch_number}/{total_batches}"
+                    )
+                    await context.set_result(index_stats)
+
+            if context is not None and not chunks:
+                await context.set_result(index_stats)
 
             logger.info(f"Indexed file {file_id} into Milvus")
 
@@ -709,7 +753,10 @@ class MilvusKB(KnowledgeBase):
                 if operator_id:
                     self.files_meta[file_id]["updated_by"] = operator_id
                 await self._persist_file(file_id)
-                return self.files_meta[file_id]
+                result_meta = dict(self.files_meta[file_id])
+                if index_stats is not None:
+                    result_meta["index_stats"] = index_stats
+                return result_meta
 
         except Exception as e:
             logger.error(f"Indexing failed for {file_id}: {e}")
@@ -717,9 +764,13 @@ class MilvusKB(KnowledgeBase):
                 self.files_meta[file_id]["status"] = FileStatus.ERROR_INDEXING
                 self.files_meta[file_id]["error"] = str(e)
                 self.files_meta[file_id]["updated_at"] = utc_isoformat()
+                if index_stats is not None:
+                    self.files_meta[file_id]["index_stats"] = index_stats
                 if operator_id:
                     self.files_meta[file_id]["updated_by"] = operator_id
                 await self._persist_file(file_id)
+            if index_stats is not None and not hasattr(e, "index_stats"):
+                setattr(e, "index_stats", index_stats)
             raise
 
         finally:
@@ -871,16 +922,23 @@ class MilvusKB(KnowledgeBase):
 
     async def aquery(self, query_text: str, kb_id: str, agent_call: bool = False, **kwargs) -> list[dict]:
         """异步查询知识库"""
-        collection = await self._get_milvus_collection(kb_id)
-        if not collection:
-            raise ValueError(f"Database {kb_id} not found")
+        request_id = str(kwargs.pop("request_id", "") or f"retrieval-{uuid.uuid4().hex[:12]}")
+        warnings: list[dict[str, Any]] = []
 
-        query_params = self._get_query_params(kb_id)
-        # 合并查询参数：kwargs（临时参数）优先级高于 query_params（持久化参数）
-        # 这样允许用户在单次查询中临时覆盖持久化配置
-        merged_kwargs = {**query_params, **kwargs}
+        def finish(chunks: list[dict], *, status: str | None = None) -> RetrievalResults:
+            effective_status = status or ("degraded" if warnings else "ok")
+            return RetrievalResults(chunks, status=effective_status, warnings=warnings, request_id=request_id)
 
         try:
+            collection = await self._get_milvus_collection(kb_id)
+            if not collection:
+                raise ValueError(f"Database {kb_id} not found")
+
+            query_params = self._get_query_params(kb_id)
+            # 合并查询参数：kwargs（临时参数）优先级高于 query_params（持久化参数）
+            # 这样允许用户在单次查询中临时覆盖持久化配置
+            merged_kwargs = {**query_params, **kwargs}
+
             # 查询参数（从 merged_kwargs 读取）
             logger.debug(f"Query params: {merged_kwargs}")
             final_top_k = int(merged_kwargs.get("final_top_k", 10))
@@ -1007,19 +1065,32 @@ class MilvusKB(KnowledgeBase):
                 logger.debug(f"Milvus hybrid query response: {len(retrieved_chunks)} chunks found")
 
             if use_graph_retrieval or graph_entity_ids:
-                graph_chunks = await self._retrieve_graph_chunks(
-                    query_text, kb_id, retrieved_chunks, merged_kwargs,
-                    graph_entity_ids=graph_entity_ids,
-                )
-                if graph_chunks:
-                    graph_weight = float(merged_kwargs.get("graph_weight", 1.0))
-                    retrieved_chunks = self._fuse_chunk_rankings(retrieved_chunks, graph_chunks, graph_weight)
+                try:
+                    graph_chunks = await self._retrieve_graph_chunks(
+                        query_text,
+                        kb_id,
+                        retrieved_chunks,
+                        merged_kwargs,
+                        graph_entity_ids=graph_entity_ids,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    warnings.append({"component": "graph", "message": str(exc), "details": {"kb_id": kb_id}})
+                    logger.error(
+                        f"Graph retrieval degraded request_id={request_id} kb_id={kb_id}: {exc}, "
+                        f"{traceback.format_exc()}"
+                    )
+                    if not retrieved_chunks:
+                        return finish([], status="error")
+                else:
+                    if graph_chunks:
+                        graph_weight = float(merged_kwargs.get("graph_weight", 1.0))
+                        retrieved_chunks = self._fuse_chunk_rankings(retrieved_chunks, graph_chunks, graph_weight)
 
             if not retrieved_chunks:
-                return []
+                return finish([], status="error" if warnings else "ok")
 
             if not use_reranker:
-                return retrieved_chunks[:final_top_k]
+                return finish(retrieved_chunks[:final_top_k])
 
             # 使用重排序模型
             reranker_model = merged_kwargs.get("reranker_model")
@@ -1050,14 +1121,22 @@ class MilvusKB(KnowledgeBase):
                     await reranker.aclose()
 
             except Exception as exc:  # noqa: BLE001
-                logger.error(f"Reranking failed: {exc}, falling back to vector scores")
+                warnings.append({"component": "reranker", "message": str(exc), "details": {"kb_id": kb_id}})
+                logger.error(
+                    f"Reranking degraded request_id={request_id} kb_id={kb_id}: {exc}, falling back to vector scores"
+                )
 
             # 统一返回结果
-            return retrieved_chunks[:final_top_k]
+            return finish(retrieved_chunks[:final_top_k])
 
         except Exception as e:
-            logger.error(f"Milvus query error: {e}, {traceback.format_exc()}")
-            return []
+            logger.error(f"Milvus query error request_id={request_id} kb_id={kb_id}: {e}, {traceback.format_exc()}")
+            return RetrievalResults(
+                [],
+                status="error",
+                warnings=[{"component": "milvus", "message": str(e), "details": {"kb_id": kb_id}}],
+                request_id=request_id,
+            )
 
     async def _retrieve_graph_chunks(
         self,
@@ -1122,8 +1201,8 @@ class MilvusKB(KnowledgeBase):
                 for chunk in chunks
             ]
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"Graph retrieval failed for {kb_id}: {exc}")
-            return []
+            logger.error(f"Graph retrieval failed for {kb_id}: {exc}, {traceback.format_exc()}")
+            raise
 
     async def _build_graph_seed_weights(
         self,

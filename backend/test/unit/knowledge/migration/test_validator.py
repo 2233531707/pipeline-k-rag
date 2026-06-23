@@ -8,14 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from yuxi.knowledge.migration import schemas, validator
+from yuxi.knowledge.migration import validator
 
 
 class TestZipSlipProtection:
     def test_normal_zip_passes(self, tmp_path: Path):
         zip_path = tmp_path / "good.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("manifest.json", json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {}}))
+            zf.writestr(
+                "manifest.json",
+                json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {}}),
+            )
             zf.writestr("chunks/chunks.jsonl", "{}")
 
         extract_dir = tmp_path / "extract"
@@ -36,7 +39,10 @@ class TestZipSlipProtection:
     def test_forbidden_extension_rejected(self, tmp_path: Path):
         zip_path = tmp_path / "bad.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("manifest.json", json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {}}))
+            zf.writestr(
+                "manifest.json",
+                json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {}}),
+            )
             zf.writestr("script.py", "print('bad')")
 
         extract_dir = tmp_path / "extract"
@@ -47,7 +53,10 @@ class TestZipSlipProtection:
     def test_forbidden_name_rejected(self, tmp_path: Path):
         zip_path = tmp_path / "bad.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("manifest.json", json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {}}))
+            zf.writestr(
+                "manifest.json",
+                json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {}}),
+            )
             zf.writestr(".env", "SECRET=xxx")
 
         extract_dir = tmp_path / "extract"
@@ -59,7 +68,14 @@ class TestZipSlipProtection:
 class TestValidateManifest:
     def test_valid_manifest(self, tmp_path: Path):
         (tmp_path / "manifest.json").write_text(
-            json.dumps({"package_version": "1", "database_name": "test", "kb_type": "milvus", "stats": {"files": 1, "chunks": 10}}),
+            json.dumps(
+                {
+                    "package_version": "1",
+                    "database_name": "test",
+                    "kb_type": "milvus",
+                    "stats": {"files": 1, "chunks": 10},
+                }
+            ),
             encoding="utf-8",
         )
         pkg = validator.validate_manifest_file(tmp_path)
@@ -86,12 +102,14 @@ class TestValidateChecksums:
         (tmp_path / "checksums").mkdir()
 
         import hashlib
+
         hash_val = hashlib.sha256(b"hello").hexdigest()
         (tmp_path / "checksums" / "sha256.json").write_text(
             json.dumps({"chunks/chunks.jsonl": hash_val}), encoding="utf-8"
         )
 
         from yuxi.knowledge.migration import schemas as s
+
         pkg = s.PackageManifest(database_name="test", kb_type="milvus", stats={})
         validator.validate_checksums(tmp_path, pkg)  # 不抛异常
 
@@ -105,15 +123,42 @@ class TestValidateChecksums:
         )
 
         from yuxi.knowledge.migration import schemas as s
+
         pkg = s.PackageManifest(database_name="test", kb_type="milvus", stats={})
         with pytest.raises(validator.ValidationError, match="校验和"):
+            validator.validate_checksums(tmp_path, pkg)
+
+    def test_unlisted_extra_file_rejected(self, tmp_path: Path):
+        (tmp_path / "chunks").mkdir()
+        (tmp_path / "chunks" / "chunks.jsonl").write_text("hello", encoding="utf-8")
+        (tmp_path / "chunks" / "extra.jsonl").write_text("extra", encoding="utf-8")
+        (tmp_path / "checksums").mkdir()
+
+        import hashlib
+
+        hash_val = hashlib.sha256(b"hello").hexdigest()
+        (tmp_path / "checksums" / "sha256.json").write_text(
+            json.dumps({"chunks/chunks.jsonl": hash_val}), encoding="utf-8"
+        )
+
+        from yuxi.knowledge.migration import schemas as s
+
+        pkg = s.PackageManifest(database_name="test", kb_type="milvus", stats={})
+        with pytest.raises(validator.ValidationError, match="未列出的额外文件"):
             validator.validate_checksums(tmp_path, pkg)
 
 
 class TestPreflightReport:
     def test_build_report(self, tmp_path: Path):
         (tmp_path / "manifest.json").write_text(
-            json.dumps({"package_version": "1", "database_name": "test_kb", "kb_type": "milvus", "stats": {"files": 3, "chunks": 42}}),
+            json.dumps(
+                {
+                    "package_version": "1",
+                    "database_name": "test_kb",
+                    "kb_type": "milvus",
+                    "stats": {"files": 3, "chunks": 42},
+                }
+            ),
             encoding="utf-8",
         )
         (tmp_path / "graph").mkdir(parents=True)
@@ -125,6 +170,7 @@ class TestPreflightReport:
         (tmp_path / "chunks" / "chunks.jsonl").write_text("{}", encoding="utf-8")
 
         from yuxi.knowledge.migration import schemas as s
+
         pkg = s.PackageManifest(database_name="test_kb", kb_type="milvus", stats={"files": 3, "chunks": 42})
         report = validator.build_preflight_report(tmp_path, pkg)
 

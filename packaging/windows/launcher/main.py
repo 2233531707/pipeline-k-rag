@@ -12,8 +12,8 @@ from config_manager import initialize_env
 from docker_manager import DockerManager
 from healthcheck import check_url, wait_for_health
 
-WEB_URL = "http://localhost:5173"
-API_HEALTH_URL = "http://localhost:5050/api/system/health"
+WEB_URL = "http://localhost"
+API_HEALTH_URL = "http://localhost/api/system/health"
 
 
 def default_project_dir() -> Path:

@@ -14,6 +14,15 @@ import { message } from 'ant-design-vue'
  * @param {string} responseType - 响应类型: 'json' | 'text' | 'blob'
  * @returns {Promise} - 请求结果
  */
+function buildApiErrorLogSummary(url, response, requestOptions) {
+  return {
+    url,
+    status: response.status,
+    statusText: response.statusText,
+    method: requestOptions.method || 'GET'
+  }
+}
+
 export async function apiRequest(url, options = {}, requiresAuth = true, responseType = 'json') {
   try {
     const isFormData = options?.body instanceof FormData
@@ -45,31 +54,23 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
       let errorMessage = `请求失败: ${response.status}, ${response.statusText}`
       let errorData = null
 
-      console.log('API请求失败:', {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
-      })
+      const errorLogSummary = buildApiErrorLogSummary(url, response, requestOptions)
+      console.warn('API请求失败:', errorLogSummary)
 
       try {
         errorData = await response.json()
         errorMessage = errorData.detail || errorData.message || errorMessage
-        console.log('API错误详情:', errorData)
 
-        // 如果是422错误，打印更详细的信息
-        if (response.status === 422) {
-          console.error('422验证错误详情:', {
-            url,
-            requestMethod: requestOptions.method,
-            requestHeaders: requestOptions.headers,
-            requestBody: requestOptions.body,
+        if (import.meta.env.DEV) {
+          console.warn('API错误详情:', {
+            ...errorLogSummary,
             responseData: errorData
           })
         }
       } catch (e) {
-        // 如果无法解析JSON，使用默认错误信息
-        console.log('无法解析错误响应JSON:', e)
+        if (import.meta.env.DEV) {
+          console.warn('无法解析错误响应JSON:', e)
+        }
       }
 
       // 特殊处理401和403错误

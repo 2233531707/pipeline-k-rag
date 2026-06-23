@@ -10,6 +10,9 @@ Responsibilities:
 import asyncio
 import hashlib
 import json
+import os
+import tempfile
+from pathlib import Path
 import re
 from collections.abc import Callable
 from typing import Any, cast
@@ -39,8 +42,8 @@ _UNSET = object()
 # Default MCP Server configurations (Imported to DB on first run)
 _DEFAULT_MCP_SERVERS = {
     "mcp-server-chart": {
-        "command": "npx",
-        "args": ["-y", "@antv/mcp-server-chart"],
+        "command": "mcp-server-chart",
+        "args": [],
         "transport": "stdio",
         "description": "图表生成工具，支持生成各类图表（柱状图、折线图、饼图等）",
         "icon": "📊",
@@ -168,7 +171,36 @@ async def _load_enabled_mcp_server_configs(
             stmt = stmt.where(MCPServer.slug.in_(names))
         result = await db.execute(stmt)
         servers = result.scalars().all()
-        return {server.slug: server.to_mcp_config() for server in servers}
+        configs = {server.slug: server.to_mcp_config() for server in servers}
+        if (os.getenv("YUXI_ENV") or "development").strip().lower() != "production":
+            return configs
+
+        safe_configs: dict[str, dict[str, Any]] = {}
+        for slug, server_config in configs.items():
+            if server_config.get("transport") != "stdio":
+                safe_configs[slug] = server_config
+                continue
+
+            builtin = _DEFAULT_MCP_SERVERS.get(slug)
+            if not builtin or builtin.get("transport") != "stdio":
+                logger.warning(f"Ignored non-builtin stdio MCP '{slug}' in production")
+                continue
+
+            temp_dir = Path(tempfile.gettempdir()) / "yuxi-mcp"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            safe_env = {
+                key: value
+                for key in ("PATH", "LANG", "LC_ALL")
+                if (value := os.getenv(key))
+            }
+            safe_env["TMPDIR"] = str(temp_dir)
+            server_config.update(
+                command=builtin["command"],
+                args=list(builtin.get("args") or []),
+                env=safe_env,
+            )
+            safe_configs[slug] = server_config
+        return safe_configs
 
     from yuxi.storage.postgres.manager import pg_manager
 

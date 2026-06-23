@@ -41,10 +41,10 @@ class FakeKnowledgeBaseRepository:
 
 @pytest.mark.asyncio
 async def test_generate_dataset_saves_generation_params(monkeypatch):
-    async def fake_enqueue(**kwargs):
-        return SimpleNamespace(id="task_1")
+    async def fake_enqueue_unique(**kwargs):
+        return SimpleNamespace(id="task_1"), True
 
-    monkeypatch.setattr(eval_service_module.tasker, "enqueue", fake_enqueue)
+    monkeypatch.setattr(eval_service_module.tasker, "enqueue_unique", fake_enqueue_unique)
     service = EvaluationService()
     service.eval_repo = FakeEvaluationRepository()
     service.chunk_repo = FakeChunkRepository(indexed_count=1)
@@ -103,10 +103,10 @@ def test_build_evaluation_run_name_uses_eval_date_hash_format():
 
 @pytest.mark.asyncio
 async def test_run_evaluation_saves_custom_name(monkeypatch):
-    async def fake_enqueue(**kwargs):
-        return SimpleNamespace(id="task_1")
+    async def fake_enqueue_unique(**kwargs):
+        return SimpleNamespace(id="task_1"), True
 
-    monkeypatch.setattr(eval_service_module.tasker, "enqueue", fake_enqueue)
+    monkeypatch.setattr(eval_service_module.tasker, "enqueue_unique", fake_enqueue_unique)
     repo = FakeEvaluationRepository()
     repo.dataset = SimpleNamespace(
         dataset_id="dataset_1",

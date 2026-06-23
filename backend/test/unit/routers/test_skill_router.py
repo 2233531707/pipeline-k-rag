@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
@@ -124,9 +126,10 @@ def test_list_accessible_skills_route(monkeypatch):
 def test_prepare_skill_upload_route(monkeypatch):
     captured: dict[str, object] = {}
 
-    async def fake_prepare_skill_upload(_db, *, filename, file_bytes, operator):
+    async def fake_prepare_skill_upload(_db, *, filename, file_path, operator):
         captured["filename"] = filename
-        captured["file_bytes"] = file_bytes.decode("utf-8")
+        captured["file_bytes"] = Path(file_path).read_text(encoding="utf-8")
+        captured["file_path"] = Path(file_path)
         captured["operator_uid"] = operator.uid
         return {"draft_id": "draft-1", "items": [{"slug": "demo", "success": True}]}
 
@@ -143,32 +146,70 @@ def test_prepare_skill_upload_route(monkeypatch):
     assert captured == {
         "filename": "SKILL.md",
         "file_bytes": "---\nname: demo\ndescription: demo skill\n---\n",
+        "file_path": captured["file_path"],
         "operator_uid": "user",
     }
+    assert not captured["file_path"].exists()
 
 
-def test_remote_skill_prepare_and_confirm_routes(monkeypatch):
+def test_remote_skill_routes_require_admin(monkeypatch):
+    async def fake_list_remote_skills(_source):
+        return [{"name": "frontend-design", "description": ""}]
+
+    async def fake_search_remote_skills(_query):
+        return [{"source": "anthropics/skills", "name": "frontend-design", "installs": ""}]
+
+    async def fake_prepare_remote_skill_install(_db, *, source, skills, operator):
+        return {"draft_id": "draft-remote", "items": [{"slug": "frontend-design", "success": True}]}
+
+    monkeypatch.setattr("server.routers.skill_router.list_remote_skills", fake_list_remote_skills)
+    monkeypatch.setattr("server.routers.skill_router.search_remote_skills", fake_search_remote_skills)
+    monkeypatch.setattr("server.routers.skill_router.prepare_remote_skill_install", fake_prepare_remote_skill_install)
+
+    client = TestClient(_build_app(role="user"))
+
+    list_resp = client.post("/api/skills/remote/list", json={"source": "anthropics/skills"})
+    search_resp = client.post("/api/skills/remote/search", json={"query": "frontend"})
+    prepare_resp = client.post(
+        "/api/skills/remote/prepare",
+        json={"source": "anthropics/skills", "skills": ["frontend-design"]},
+    )
+
+    assert list_resp.status_code == 403, list_resp.text
+    assert search_resp.status_code == 403, search_resp.text
+    assert prepare_resp.status_code == 403, prepare_resp.text
+
+
+def test_admin_remote_skill_prepare_and_confirm_routes(monkeypatch):
     captured: dict[str, object] = {}
 
     async def fake_prepare_remote_skill_install(_db, *, source, skills, operator):
         captured["prepare"] = {"source": source, "skills": skills, "operator_uid": operator.uid}
         return {"draft_id": "draft-remote", "items": [{"slug": "frontend-design", "success": True}]}
 
-    async def fake_confirm_skill_install_draft(_db, *, draft_id, share_config, operator):
-        captured["confirm"] = {"draft_id": draft_id, "share_config": share_config, "operator_uid": operator.uid}
+    async def fake_confirm_skill_install_draft(_db, *, draft_id, share_config, operator, high_risk_confirmed):
+        captured["confirm"] = {
+            "draft_id": draft_id,
+            "share_config": share_config,
+            "operator_uid": operator.uid,
+            "high_risk_confirmed": high_risk_confirmed,
+        }
         return [{"slug": "frontend-design", "success": True}]
 
     monkeypatch.setattr("server.routers.skill_router.prepare_remote_skill_install", fake_prepare_remote_skill_install)
     monkeypatch.setattr("server.routers.skill_router.confirm_skill_install_draft", fake_confirm_skill_install_draft)
 
-    client = TestClient(_build_app(role="user"))
+    client = TestClient(_build_app(role="admin"))
     prepare_resp = client.post(
         "/api/skills/remote/prepare",
         json={"source": "anthropics/skills", "skills": ["frontend-design"]},
     )
     confirm_resp = client.post(
         "/api/skills/install-drafts/draft-remote/confirm",
-        json={"share_config": {"access_level": "user", "department_ids": [], "user_uids": ["user"]}},
+        json={
+            "share_config": {"access_level": "global", "department_ids": [], "user_uids": []},
+            "high_risk_confirmed": True,
+        },
     )
 
     assert prepare_resp.status_code == 200, prepare_resp.text
@@ -176,10 +217,11 @@ def test_remote_skill_prepare_and_confirm_routes(monkeypatch):
     assert captured["prepare"] == {
         "source": "anthropics/skills",
         "skills": ["frontend-design"],
-        "operator_uid": "user",
+        "operator_uid": "admin",
     }
     assert captured["confirm"]["draft_id"] == "draft-remote"
-    assert captured["confirm"]["operator_uid"] == "user"
+    assert captured["confirm"]["operator_uid"] == "admin"
+    assert captured["confirm"]["high_risk_confirmed"] is True
 
 
 def test_discard_skill_draft_route(monkeypatch):

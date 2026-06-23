@@ -135,11 +135,35 @@ async def _run_skills_cli(
 
 def _create_isolated_workdir() -> tuple[str, dict[str, str], str]:
     temp_home = tempfile.mkdtemp(prefix=".remote-skills-")
-    env = os.environ.copy()
-    env["HOME"] = temp_home
-    workdir = str(Path(temp_home) / "workspace")
-    Path(workdir).mkdir(parents=True, exist_ok=True)
-    return temp_home, env, workdir
+    temp_root = Path(temp_home)
+    workdir = temp_root / "workspace"
+    temp_dir = temp_root / "tmp"
+    npm_cache = temp_root / ".npm-cache"
+    appdata = temp_root / "AppData" / "Roaming"
+    local_appdata = temp_root / "AppData" / "Local"
+    for path in (workdir, temp_dir, npm_cache, appdata, local_appdata):
+        path.mkdir(parents=True, exist_ok=True)
+
+    env: dict[str, str] = {
+        "HOME": temp_home,
+        "PATH": os.environ.get("PATH", ""),
+        "TMP": str(temp_dir),
+        "TEMP": str(temp_dir),
+        "TMPDIR": str(temp_dir),
+        "NPM_CONFIG_CACHE": str(npm_cache),
+        "USERPROFILE": temp_home,
+        "APPDATA": str(appdata),
+        "LOCALAPPDATA": str(local_appdata),
+    }
+    for key in ("SystemRoot", "WINDIR", "ComSpec", "PATHEXT"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return temp_home, env, str(workdir)
 
 
 async def list_remote_skills(source: str) -> list[dict[str, str]]:

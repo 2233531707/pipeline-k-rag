@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
@@ -38,8 +40,10 @@ from yuxi.agents.skills.service import (
     user_can_manage_skill,
 )
 from yuxi.agents.skills.remote_install import list_remote_skills, search_remote_skills
+from yuxi.services.operation_log_service import log_operation
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.logging_config import logger
+from yuxi.utils.upload_utils import UPLOAD_TEMP_DIR, write_upload_to_path
 
 skills = APIRouter(prefix="/system/skills", tags=["skills"])
 user_skills = APIRouter(prefix="/skills", tags=["skills"])
@@ -88,11 +92,17 @@ class SkillBatchDeleteRequest(BaseModel):
 
 class SkillDraftConfirmRequest(BaseModel):
     share_config: dict | None = Field(None, description="共享权限配置")
+    high_risk_confirmed: bool = Field(False, description="确认远程任意来源安装的高风险操作")
 
 
 def _raise_from_value_error(e: ValueError) -> None:
     message = str(e)
-    status_code = 404 if "不存在" in message or "无权" in message else 400
+    if "远程 Skill" in message and "无权" in message:
+        status_code = 403
+    elif "不存在" in message or "无权" in message:
+        status_code = 404
+    else:
+        status_code = 400
     raise HTTPException(status_code=status_code, detail=message)
 
 
@@ -137,11 +147,22 @@ async def prepare_skill_upload_route(
     current_user: User = Depends(get_required_user),
     db: AsyncSession = Depends(get_db),
 ):
+    temp_path: Path | None = None
     try:
+        UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        suffix = Path(file.filename or "").suffix.lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_TEMP_DIR) as temp_file:
+            temp_path = Path(temp_file.name)
+        await write_upload_to_path(
+            file,
+            temp_path,
+            max_size_bytes=20 * 1024 * 1024,
+            too_large_message="Skill ZIP 不能超过 20 MB",
+        )
         data = await prepare_skill_upload(
             db,
             filename=file.filename or "",
-            file_bytes=await file.read(),
+            file_path=temp_path,
             operator=current_user,
         )
         return {"success": True, "data": data}
@@ -150,12 +171,26 @@ async def prepare_skill_upload_route(
     except Exception as e:
         logger.error(f"Failed to prepare skill upload: {e}")
         raise HTTPException(status_code=500, detail="解析上传 Skill 失败")
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 @user_skills.post("/remote/list")
-async def list_remote_skills_route(payload: RemoteSkillSourceRequest, _current_user: User = Depends(get_required_user)):
+async def list_remote_skills_route(
+    payload: RemoteSkillSourceRequest,
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
     try:
-        return {"success": True, "data": await list_remote_skills(payload.source)}
+        data = await list_remote_skills(payload.source)
+        await log_operation(
+            db,
+            getattr(current_user, "id", None),
+            "remote_skill_list",
+            json.dumps({"source": payload.source, "result": {"total": len(data)}}, ensure_ascii=False),
+        )
+        return {"success": True, "data": data}
     except ValueError as e:
         _raise_from_value_error(e)
     except Exception as e:
@@ -165,10 +200,19 @@ async def list_remote_skills_route(payload: RemoteSkillSourceRequest, _current_u
 
 @user_skills.post("/remote/search")
 async def search_remote_skills_route(
-    payload: RemoteSkillSearchRequest, _current_user: User = Depends(get_required_user)
+    payload: RemoteSkillSearchRequest,
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
 ):
     try:
-        return {"success": True, "data": await search_remote_skills(payload.query)}
+        data = await search_remote_skills(payload.query)
+        await log_operation(
+            db,
+            getattr(current_user, "id", None),
+            "remote_skill_search",
+            json.dumps({"query": payload.query, "result": {"total": len(data)}}, ensure_ascii=False),
+        )
+        return {"success": True, "data": data}
     except ValueError as e:
         _raise_from_value_error(e)
     except Exception as e:
@@ -179,7 +223,7 @@ async def search_remote_skills_route(
 @user_skills.post("/remote/prepare")
 async def prepare_remote_skills_route(
     payload: RemoteSkillPrepareRequest,
-    current_user: User = Depends(get_required_user),
+    current_user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -210,6 +254,7 @@ async def confirm_skill_install_draft_route(
             draft_id=draft_id,
             share_config=payload.share_config,
             operator=current_user,
+            high_risk_confirmed=payload.high_risk_confirmed,
         )
         return {"success": True, "data": results, "summary": _summarize_results(results)}
     except ValueError as e:

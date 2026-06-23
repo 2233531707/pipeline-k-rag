@@ -7,7 +7,13 @@ class SearchInputSchema(BaseModel):
     kb_id: str = Field(description="知识库资源 ID，也就是 kb_id")
     query_text: str = Field(description="检索关键词，应提炼为有助于召回答案的关键词或短语")
     file_name: str | None = Field(default=None, description="可选文件名关键词过滤，非必要不要使用")
-    graph_entity_ids: list[str] | None = Field(default=None, description="图谱实体 ID 列表，作为种子增强检索。来自 query_knowledge_graph 的 retrieval_hints.graph_entity_ids")
+    graph_entity_ids: list[str] | None = Field(
+        default=None,
+        description=(
+            "图谱实体 ID 列表，作为种子增强检索。"
+            "来自 query_knowledge_graph 的 retrieval_hints.graph_entity_ids"
+        ),
+    )
 
 
 class SearchResultSchema(BaseModel):
@@ -18,8 +24,18 @@ class SearchResultSchema(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, description="来源、分数、chunk_index 等附加信息")
 
 
+class RetrievalWarningSchema(BaseModel):
+    component: str = Field(description="降级或失败的检索组件")
+    message: str = Field(description="可展示的告警信息")
+    code: str | None = Field(default=None, description="可选错误代码")
+    details: dict[str, Any] = Field(default_factory=dict, description="结构化调试信息")
+
+
 class SearchOutputSchema(BaseModel):
     kb_id: str = Field(description="知识库资源 ID，也就是 kb_id")
+    status: Literal["ok", "degraded", "error"] = Field(default="ok", description="检索状态")
+    warnings: list[RetrievalWarningSchema] = Field(default_factory=list, description="降级或失败告警")
+    request_id: str | None = Field(default=None, description="检索请求 ID，用于日志关联")
     results: list[SearchResultSchema] = Field(default_factory=list, description="检索结果列表")
 
 

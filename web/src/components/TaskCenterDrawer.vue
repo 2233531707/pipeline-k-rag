@@ -87,6 +87,14 @@
               <a-button
                 type="text"
                 size="small"
+                v-if="canContinue(task)"
+                @click.stop="handleContinue(task.id)"
+              >
+                继续
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
                 danger
                 v-if="canCancel(task)"
                 @click.stop="handleCancel(task.id)"
@@ -198,7 +206,7 @@ const filteredTasks = computed(() => {
 const hasTasks = computed(() => filteredTasks.value.length > 0)
 
 const ACTIVE_CLASS_STATUSES = new Set(['pending', 'queued', 'running'])
-const FAILED_STATUSES = new Set(['failed', 'cancelled'])
+const FAILED_STATUSES = new Set(['failed', 'cancelled', 'retryable_failed'])
 const TASK_TYPE_LABELS = {
   knowledge_ingest: '知识库导入',
   knowledge_rechunks: '文档重新分块',
@@ -210,7 +218,7 @@ function taskCardClasses(task) {
   return {
     'task-card--active': ACTIVE_CLASS_STATUSES.has(task.status),
     'task-card--success': task.status === 'success',
-    'task-card--failed': task.status === 'failed'
+    'task-card--failed': FAILED_STATUSES.has(task.status)
   }
 }
 
@@ -276,6 +284,10 @@ function handleCancel(taskId) {
   taskerStore.cancelTask(taskId)
 }
 
+function handleContinue(taskId) {
+  taskerStore.continueTask(taskId)
+}
+
 function handleDelete(taskId, taskName) {
   Modal.confirm({
     title: '确认删除',
@@ -327,7 +339,7 @@ function getTaskDuration(task) {
 }
 
 function isTaskCompleted(task) {
-  return ['success', 'failed', 'cancelled'].includes(task.status)
+  return ['success', 'failed', 'cancelled', 'retryable_failed'].includes(task.status)
 }
 
 function statusLabel(status) {
@@ -337,15 +349,20 @@ function statusLabel(status) {
     running: '进行中',
     success: '已完成',
     failed: '失败',
+    retryable_failed: '可继续',
     cancelled: '已取消'
   }
   return map[status] || status
 }
 
 function progressStatus(status) {
-  if (status === 'failed') return 'exception'
+  if (status === 'failed' || status === 'retryable_failed') return 'exception'
   if (status === 'cancelled') return 'normal'
   return 'active'
+}
+
+function canContinue(task) {
+  return task.status === 'retryable_failed' && task.can_continue
 }
 
 function canCancel(task) {
@@ -478,6 +495,13 @@ function canCancel(task) {
 }
 .status-failed .status-text {
   color: var(--color-error-500);
+}
+
+.status-retryable_failed .status-dot {
+  background: var(--color-warning-500);
+}
+.status-retryable_failed .status-text {
+  color: var(--color-warning-900);
 }
 
 .status-cancelled .status-dot {

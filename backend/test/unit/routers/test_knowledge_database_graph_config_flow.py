@@ -24,9 +24,11 @@ def _patch_create_dependencies(monkeypatch, *, chat_model_type: str | None = "ch
     monkeypatch.setattr(
         knowledge_router.model_cache,
         "get_model_info",
-        lambda spec: SimpleNamespace(model_type="embedding" if spec == "embed/model" else chat_model_type)
-        if chat_model_type
-        else None,
+        lambda spec: (
+            SimpleNamespace(model_type="embedding" if spec == "embed/model" else chat_model_type)
+            if chat_model_type
+            else None
+        ),
     )
 
     configure = AsyncMock(
@@ -142,3 +144,29 @@ async def test_configure_failure_rolls_back_created_database(monkeypatch):
             }
         )
     knowledge_router.knowledge_base.delete_database.assert_awaited_once_with("kb-created")
+
+
+@pytest.mark.asyncio
+async def test_graph_build_index_rejects_over_limit_config_before_enqueue(monkeypatch):
+    async def fake_has_running(kb_id: str) -> bool:
+        return False
+
+    class FakeGraphService:
+        async def validate_build_config(self, kb_id: str):
+            raise ValueError("图谱抽取并发数 8 不能超过部署上限 3")
+
+    async def fake_enqueue_unique_by_payload(**kwargs):
+        raise AssertionError("over-limit graph build should not be enqueued")
+
+    monkeypatch.setattr(knowledge_router, "_has_running_graph_build_task", fake_has_running)
+    monkeypatch.setattr(
+        knowledge_router.knowledge_base, "get_database_info", AsyncMock(return_value={"name": "测试知识库"})
+    )
+    monkeypatch.setattr(knowledge_router, "MilvusGraphService", lambda: FakeGraphService())
+    monkeypatch.setattr(knowledge_router.tasker, "enqueue_unique_by_payload", fake_enqueue_unique_by_payload)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await knowledge_router.index_graph_build("kb_1", {"batch_size": 20}, current_user=_user())
+
+    assert exc_info.value.status_code == 400
+    assert "不能超过部署上限 3" in exc_info.value.detail

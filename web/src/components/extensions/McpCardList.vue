@@ -230,10 +230,21 @@ const handleFormSubmitted = async () => {
   await fetchServers()
 }
 
-const handleSetServerEnabled = async (server, enabled) => {
+const handleSetServerEnabled = async (server, enabled, highRiskConfirmed = false) => {
+  if (enabled && server.transport === 'stdio' && !highRiskConfirmed) {
+    Modal.confirm({
+      title: '启用高风险 stdio MCP',
+      content: 'stdio MCP 会在服务容器内启动本地进程。请确认该 MCP 为系统内置且来源可信。',
+      okText: '确认风险并启用',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => handleSetServerEnabled(server, true, true)
+    })
+    return
+  }
   try {
     actionLoadingSlug.value = server.slug
-    const result = await mcpApi.updateMcpServerStatus(server.slug, enabled)
+    const result = await mcpApi.updateMcpServerStatus(server.slug, enabled, highRiskConfirmed)
     if (result.success) {
       message.success(result.message || `MCP 已${enabled ? '添加' : '移除'}`)
       if (enabled) closeBasicInfo()

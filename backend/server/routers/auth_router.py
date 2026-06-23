@@ -1,3 +1,6 @@
+import hashlib
+from pathlib import Path
+
 import re
 from yuxi.utils import logger
 
@@ -15,13 +18,13 @@ from yuxi.repositories.department_repository import DepartmentRepository
 from server.utils.auth_middleware import (
     get_admin_user,
     get_superadmin_user,
-    get_current_user,
     get_db,
     get_required_user,
 )
 from yuxi.utils.auth_utils import AuthUtils
 from yuxi.services.user_identity_service import generate_unique_uid, validate_username, is_valid_phone_number
 from yuxi.services.operation_log_service import log_operation
+from yuxi.services.upload_audit_service import audit_upload
 from yuxi.storage.minio import upload_image_to_minio
 from yuxi.utils.datetime_utils import utc_now_naive
 
@@ -329,7 +332,7 @@ async def initialize_admin(admin_data: InitializeAdmin, db: AsyncSession = Depen
 
 
 @auth.get("/me", response_model=UserResponse)
-async def read_users_me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def read_users_me(current_user: User = Depends(get_required_user), db: AsyncSession = Depends(get_db)):
     """获取当前登录用户的个人信息"""
     user_dict = current_user.to_dict()
 
@@ -828,6 +831,10 @@ async def upload_user_avatar(
 ):
     """上传用户头像"""
     try:
+        image_data = await file.read()
+        content_hash = hashlib.sha256(image_data).hexdigest()
+        await file.seek(0)
+
         avatar_url = await upload_image_to_minio(
             file,
             object_prefix=f"avatar/{current_user.id}",
@@ -838,10 +845,31 @@ async def upload_user_avatar(
         current_user.avatar = avatar_url
         await db.commit()
         await log_operation(db, current_user.id, "上传头像", f"更新头像: {avatar_url}")
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="avatar_upload",
+            filename=file.filename,
+            size=len(image_data),
+            detected_type=Path(file.filename or "").suffix.lower(),
+            content_hash=content_hash,
+            result="success",
+        )
 
         return {"success": True, "avatar_url": avatar_url, "message": "头像上传成功"}
 
     except ValueError as e:
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="avatar_upload",
+            filename=file.filename,
+            size=len(image_data),
+            detected_type=Path(file.filename or "").suffix.lower(),
+            content_hash=content_hash,
+            result="rejected",
+            reason=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"头像上传失败: {str(e)}")

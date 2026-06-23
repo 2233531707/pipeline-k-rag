@@ -42,6 +42,23 @@ class KBOperationError(KnowledgeBaseException):
     pass
 
 
+class RetrievalResults(list):
+    """List-compatible retrieval result with status metadata."""
+
+    def __init__(
+        self,
+        chunks: list[dict[str, Any]] | None = None,
+        *,
+        status: str = "ok",
+        warnings: list[dict[str, Any]] | None = None,
+        request_id: str | None = None,
+    ):
+        super().__init__(chunks or [])
+        self.status = status
+        self.warnings = warnings or []
+        self.request_id = request_id
+
+
 class KnowledgeBase(ABC):
     """知识库抽象基类，定义统一接口"""
 
@@ -695,6 +712,10 @@ class KnowledgeBase(ABC):
         if not isinstance(retrieval_results, list):
             return retrieval_results
 
+        status = str(getattr(retrieval_results, "status", "ok") or "ok")
+        warnings = list(getattr(retrieval_results, "warnings", []) or [])
+        request_id = getattr(retrieval_results, "request_id", None)
+
         results = []
         for index, chunk in enumerate(retrieval_results):
             if not isinstance(chunk, dict):
@@ -728,7 +749,13 @@ class KnowledgeBase(ABC):
                 )
             )
 
-        return SearchOutputSchema(kb_id=str(kb_id), results=results).model_dump()
+        return SearchOutputSchema(
+            kb_id=str(kb_id),
+            status=status,
+            warnings=warnings,
+            request_id=request_id,
+            results=results,
+        ).model_dump(exclude_none=True)
 
     @staticmethod
     def _build_find_file_windows(
@@ -845,7 +872,14 @@ class KnowledgeBase(ABC):
         )
 
     @abstractmethod
-    async def index_file(self, kb_id: str, file_id: str, operator_id: str | None = None) -> dict:
+    async def index_file(
+        self,
+        kb_id: str,
+        file_id: str,
+        operator_id: str | None = None,
+        params: dict | None = None,
+        context: Any | None = None,
+    ) -> dict:
         """
         Index parsed file (Status: INDEXING -> INDEXED/ERROR_INDEXING)
 

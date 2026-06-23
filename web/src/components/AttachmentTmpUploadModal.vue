@@ -17,7 +17,7 @@
       class="attachment-dropzone"
     >
       <p class="dropzone-title">点击或拖拽文件到此处上传</p>
-      <p class="dropzone-desc">支持任意文件格式 ≤ 5 MB；PDF 和图片可选解析为 Markdown。</p>
+      <p class="dropzone-desc">支持任意文件格式 ≤ 512 MB；100 MB 内的 PDF 和图片可选解析为 Markdown。</p>
     </a-upload-dragger>
 
     <div v-if="fileItems.length" class="attachment-list">
@@ -53,6 +53,9 @@
               <span v-if="item.error" class="attachment-error">{{ item.error }}</span>
               <span v-else-if="item.parseError" class="attachment-error">{{
                 item.parseError
+              }}</span>
+              <span v-else-if="item.parseUnavailableReason" class="attachment-error">{{
+                item.parseUnavailableReason
               }}</span>
             </div>
 
@@ -240,6 +243,7 @@ const normalizeTmpUpload = (response) => ({
   minioUrl: response.minio_url,
   parseSupported: response.parse_supported,
   parseMethods: response.parse_methods || [],
+  parseUnavailableReason: response.parse_unavailable_reason || null,
   selectedParseMethod: getDefaultParseMethod(response.parse_methods || [])
 })
 

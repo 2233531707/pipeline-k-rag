@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from server.utils.auth_middleware import get_required_user
+from server.utils.auth_middleware import get_db, get_required_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from yuxi.services.upload_audit_service import audit_upload
 from yuxi import knowledge_base
 from yuxi.services.workspace_service import (
     create_workspace_directory,
@@ -168,8 +171,36 @@ async def upload_workspace_files_route(
     parent_path: str = Form(..., description="父目录路径"),
     files: list[UploadFile] = File(..., description="上传文件列表"),
     current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    return await upload_workspace_files(parent_path=parent_path, files=files, current_user=current_user)
+    try:
+        result = await upload_workspace_files(parent_path=parent_path, files=files, current_user=current_user)
+    except HTTPException as exc:
+        for file in files:
+            file_name = Path(file.filename or "").name
+            await audit_upload(
+                db=db,
+                user_id=getattr(current_user, "id", None),
+                entry="workspace_upload",
+                filename=file_name,
+                detected_type=Path(file_name).suffix.lower(),
+                result="rejected",
+                reason=str(exc.detail),
+            )
+        raise
+    audit_items = result.pop("_upload_audit", [])
+    for item in audit_items:
+        await audit_upload(
+            db=db,
+            user_id=getattr(current_user, "id", None),
+            entry="workspace_upload",
+            filename=item.get("filename"),
+            size=item.get("size"),
+            detected_type=item.get("detected_type"),
+            content_hash=item.get("content_hash"),
+            result="success",
+        )
+    return result
 
 
 @workspace.get("/download")

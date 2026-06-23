@@ -49,6 +49,8 @@ class Config(BaseModel):
     sandbox_exec_timeout_seconds: int = Field(default=180, description="沙箱执行超时时间（秒）")
     sandbox_max_output_bytes: int = Field(default=262144, description="沙箱最大输出字节数")
     sandbox_keepalive_interval_seconds: int = Field(default=30, description="沙箱保活间隔")
+    knowledge_graph_max_concurrency: int = Field(default=20, description="图谱抽取部署级最大并发数")
+    knowledge_embedding_batch_size: int = Field(default=40, description="知识库入库 Embedding 批大小")
 
     _config_file: Path | None = PrivateAttr(default=None)
     _user_modified_fields: set[str] = PrivateAttr(default_factory=set)
@@ -103,6 +105,12 @@ class Config(BaseModel):
         self.sandbox_keepalive_interval_seconds = int(
             os.getenv("SANDBOX_KEEPALIVE_INTERVAL_SECONDS") or self.sandbox_keepalive_interval_seconds or 30
         )
+        self.knowledge_graph_max_concurrency = int(
+            os.getenv("KNOWLEDGE_GRAPH_MAX_CONCURRENCY") or self.knowledge_graph_max_concurrency or 20
+        )
+        self.knowledge_embedding_batch_size = int(
+            os.getenv("KNOWLEDGE_EMBEDDING_BATCH_SIZE") or self.knowledge_embedding_batch_size or 40
+        )
 
         if self.sandbox_provider.lower() != "provisioner":
             raise ValueError("Only sandbox_provider=provisioner is supported.")
@@ -110,6 +118,10 @@ class Config(BaseModel):
             raise ValueError("SANDBOX_PROVISIONER_URL is required when sandbox provider is provisioner.")
         if not self.sandbox_virtual_path_prefix.startswith("/"):
             self.sandbox_virtual_path_prefix = f"/{self.sandbox_virtual_path_prefix}"
+        if self.knowledge_graph_max_concurrency < 1:
+            raise ValueError("KNOWLEDGE_GRAPH_MAX_CONCURRENCY must be at least 1.")
+        if self.knowledge_embedding_batch_size < 1:
+            raise ValueError("KNOWLEDGE_EMBEDDING_BATCH_SIZE must be at least 1.")
 
     def save(self) -> None:
         if not self._config_file:

@@ -18,67 +18,42 @@ from typing import Any
 
 from yuxi.knowledge.migration import checksums as cs, manifest, schemas
 from yuxi.utils import logger
+from yuxi.utils.zip_safety import ZipSafetyPolicy, safe_extract_zip, scan_zip_file
 
 
 class ValidationError(Exception):
     """校验失败"""
 
+PORTABLE_KB_ZIP_POLICY = ZipSafetyPolicy(
+    max_file_count=schemas.MAX_FILE_COUNT,
+    max_single_file_bytes=schemas.MAX_SINGLE_FILE_BYTES,
+    max_total_uncompressed_bytes=schemas.MAX_TOTAL_UNCOMPRESSED_BYTES,
+    max_archive_bytes=schemas.MAX_PACKAGE_UPLOAD_BYTES,
+    max_compression_ratio=100,
+    max_depth=32,
+    forbidden_extensions=frozenset(schemas.FORBIDDEN_EXTENSIONS),
+    forbidden_names=frozenset(schemas.FORBIDDEN_NAMES),
+)
+
 
 def validate_zip_safety(zip_path: Path, extract_dir: Path) -> list[str]:
-    """安全解压 ZIP 文件，返回解压的文件相对路径列表。
+    """安全解压 ZIP 文件，返回解压的文件相对路径列表。"""
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            report = scan_zip_file(
+                zf,
+                PORTABLE_KB_ZIP_POLICY,
+                archive_size_bytes=zip_path.stat().st_size,
+            )
+            safe_extract_zip(zf, extract_dir)
+    except ValueError as e:
+        message = str(e)
+        if "路径穿越" in message or "绝对路径" in message or "路径分隔符" in message:
+            raise ValidationError(f"Zip Slip 检测: {message}") from e
+        raise ValidationError(message) from e
 
-    执行：
-    - Zip Slip 防护（每个条目规范化路径必须在 extract_dir 内）
-    - 文件数量上限检查
-    - 单文件大小上限检查
-    - 禁止文件扩展名检查
-    """
-    file_count = 0
-    total_size = 0
-    extracted: list[str] = []
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        for entry in zf.infolist():
-            if entry.is_dir():
-                continue
-
-            # Zip Slip 防护
-            target_path = (extract_dir / entry.filename).resolve()
-            extract_dir_resolved = extract_dir.resolve()
-            if not str(target_path).startswith(str(extract_dir_resolved) + os.sep) and target_path != extract_dir_resolved:
-                raise ValidationError(f"Zip Slip 检测: {entry.filename}")
-
-            # 文件数量限制
-            file_count += 1
-            if file_count > schemas.MAX_FILE_COUNT:
-                raise ValidationError(f"文件数量超限: {file_count} > {schemas.MAX_FILE_COUNT}")
-
-            # 单文件大小限制
-            if entry.file_size > schemas.MAX_SINGLE_FILE_BYTES:
-                raise ValidationError(f"单文件过大: {entry.filename} ({entry.file_size} bytes)")
-
-            # 禁止扩展名
-            ext = Path(entry.filename).suffix.lower()
-            if ext in schemas.FORBIDDEN_EXTENSIONS:
-                raise ValidationError(f"禁止的文件类型: {entry.filename} ({ext})")
-
-            # 禁止文件名含敏感词
-            name_lower = Path(entry.filename).name.lower()
-            for forbidden in schemas.FORBIDDEN_NAMES:
-                if forbidden in name_lower:
-                    raise ValidationError(f"禁止的文件名: {entry.filename} (含 '{forbidden}')")
-
-            total_size += entry.file_size
-            if total_size > schemas.MAX_TOTAL_UNCOMPRESSED_BYTES:
-                raise ValidationError(f"解压总大小超限: {total_size} > {schemas.MAX_TOTAL_UNCOMPRESSED_BYTES}")
-
-            # 解压
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            zf.extract(entry, extract_dir)
-            extracted.append(entry.filename)
-
-    logger.info(f"ZIP 安全校验通过: {file_count} 个文件, {total_size} bytes")
-    return extracted
+    logger.info(f"ZIP 安全校验通过: {report.file_count} 个文件, {report.total_uncompressed_bytes} bytes")
+    return [entry.filename for entry in report.entries if not entry.is_dir]
 
 
 def validate_manifest_file(root_dir: Path) -> schemas.PackageManifest:
@@ -108,6 +83,9 @@ def validate_checksums(root_dir: Path, manifest_obj: schemas.PackageManifest) ->
             all_files.append(rel)
 
     actual = cs.build_checksums(root_dir, all_files)
+    unchecked_files = sorted(set(actual) - set(stored) - {"checksums/sha256.json"})
+    if unchecked_files:
+        raise ValidationError(f"校验和清单存在未列出的额外文件: {unchecked_files[0]}")
 
     for rel_path, stored_hash in stored.items():
         if rel_path.startswith("checksums/"):

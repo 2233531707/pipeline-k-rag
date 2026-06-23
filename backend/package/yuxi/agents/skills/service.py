@@ -20,9 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yuxi import config as sys_config
 from yuxi.agents.mcp.service import get_enabled_mcp_server_slugs
 from yuxi.agents.skills.repository import SkillRepository
+from yuxi.services.operation_log_service import log_operation
 from yuxi.storage.postgres.models_business import Skill, User
 from yuxi.utils.logging_config import logger
+from yuxi.utils.upload_utils import calculate_path_sha256
 from yuxi.utils.share_config import SHARE_ACCESS_LEVELS, normalize_share_config
+from yuxi.utils.zip_safety import ZipSafetyPolicy, safe_extract_zip, scan_zip_file
 
 SKILL_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 SKILL_NAME_PATTERN = SKILL_SLUG_PATTERN
@@ -64,6 +67,43 @@ ADMIN_ROLES = {"admin", "superadmin"}
 DEFAULT_SKILL_SHARE_CONFIG = {"access_level": "user", "department_ids": [], "user_uids": []}
 BUILTIN_SKILL_SHARE_CONFIG = {"access_level": "global", "department_ids": [], "user_uids": []}
 SKILL_DRAFT_TTL_SECONDS = 60 * 60
+SKILL_ZIP_MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
+SKILL_ZIP_MAX_FILE_COUNT = 200
+SKILL_ZIP_MAX_SINGLE_FILE_BYTES = 5 * 1024 * 1024
+SKILL_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+SKILL_ZIP_MAX_COMPRESSION_RATIO = 100
+SKILL_ZIP_MAX_DEPTH = 12
+SKILL_ZIP_MAX_UNKNOWN_BINARY_BYTES = 256 * 1024
+SKILL_ZIP_SCRIPT_EXTENSIONS = {".py", ".js", ".ts", ".sh", ".bash", ".bat", ".cmd", ".ps1"}
+SKILL_ZIP_EXECUTABLE_EXTENSIONS = {
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".bin",
+    ".msi",
+    ".com",
+    ".scr",
+    ".jar",
+    ".class",
+    ".wasm",
+}
+SKILL_ZIP_ALLOWED_BINARY_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"}
+SKILL_ZIP_SENSITIVE_HIDDEN_NAMES = {
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+    ".git",
+    ".git-credentials",
+    ".gitconfig",
+    ".ssh",
+    ".aws",
+    "id_rsa",
+    "id_ed25519",
+}
 _THREAD_SKILLS_LOCK = threading.Lock()
 _THREAD_SKILLS_LOCKS: dict[str, threading.Lock] = {}
 
@@ -585,13 +625,32 @@ def _rewrite_frontmatter_slug(content: str, new_slug: str) -> str:
     return f"---\n{dumped}\n---\n{body}"
 
 
-def _validate_zip_paths(zip_file: zipfile.ZipFile) -> None:
-    for name in zip_file.namelist():
-        pure = PurePosixPath(name)
-        if pure.is_absolute():
-            raise ValueError(f"ZIP 包含不安全绝对路径: {name}")
-        if ".." in pure.parts:
-            raise ValueError(f"ZIP 包含路径穿越片段: {name}")
+SKILL_ZIP_POLICY = ZipSafetyPolicy(
+    max_archive_bytes=SKILL_ZIP_MAX_ARCHIVE_BYTES,
+    max_file_count=SKILL_ZIP_MAX_FILE_COUNT,
+    max_single_file_bytes=SKILL_ZIP_MAX_SINGLE_FILE_BYTES,
+    max_total_uncompressed_bytes=SKILL_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES,
+    max_compression_ratio=SKILL_ZIP_MAX_COMPRESSION_RATIO,
+    max_depth=SKILL_ZIP_MAX_DEPTH,
+    forbidden_extensions=frozenset(SKILL_ZIP_EXECUTABLE_EXTENSIONS),
+    forbidden_names=frozenset(SKILL_ZIP_SENSITIVE_HIDDEN_NAMES),
+    warning_extensions=frozenset(SKILL_ZIP_SCRIPT_EXTENSIONS),
+    text_extensions=frozenset(TEXT_FILE_EXTENSIONS),
+    allowed_binary_extensions=frozenset(SKILL_ZIP_ALLOWED_BINARY_EXTENSIONS),
+    max_unknown_binary_bytes=SKILL_ZIP_MAX_UNKNOWN_BINARY_BYTES,
+    forbidden_extension_label="可执行二进制文件",
+    forbidden_name_label="隐藏敏感文件",
+    warning_extension_label="脚本文件存在执行风险",
+    unknown_binary_label="未知大二进制文件",
+)
+
+
+def _validate_skill_zip_scan(zip_file: zipfile.ZipFile, *, archive_size_bytes: int) -> dict[str, Any]:
+    return scan_zip_file(zip_file, SKILL_ZIP_POLICY, archive_size_bytes=archive_size_bytes).to_dict()
+
+
+def _extract_validated_skill_zip(zip_file: zipfile.ZipFile, extract_dir: Path) -> None:
+    safe_extract_zip(zip_file, extract_dir)
 
 
 async def _generate_available_slug(repo: SkillRepository, base_slug: str) -> str:
@@ -629,12 +688,16 @@ async def _stage_skill_draft_item(
     *,
     source_skill_dir: Path,
     draft_items_dir: Path,
+    warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     item_id = uuid.uuid4().hex
     item_dir = draft_items_dir / item_id
     shutil.copytree(source_skill_dir, item_dir, symlinks=False)
     parsed = _parse_skill_dir_metadata(item_dir)
     final_slug = await _generate_available_slug(repo, parsed["slug"])
+    item_warnings = list(warnings or [])
+    if final_slug != parsed["slug"]:
+        item_warnings.append(f"原始 slug {parsed['slug']} 已存在，将安装为 {final_slug}")
     return {
         "draft_item_id": item_id,
         "source_dir": f"items/{item_id}",
@@ -645,9 +708,7 @@ async def _stage_skill_draft_item(
         "tool_dependencies": parsed["tool_dependencies"],
         "mcp_dependencies": parsed["mcp_dependencies"],
         "skill_dependencies": parsed["skill_dependencies"],
-        "warnings": [f"原始 slug {parsed['slug']} 已存在，将安装为 {final_slug}"]
-        if final_slug != parsed["slug"]
-        else [],
+        "warnings": item_warnings,
         "success": True,
     }
 
@@ -777,9 +838,19 @@ async def prepare_skill_upload(
     db: AsyncSession,
     *,
     filename: str,
-    file_bytes: bytes,
     operator: User,
+    file_bytes: bytes | None = None,
+    file_path: Path | None = None,
 ) -> dict[str, Any]:
+    if (file_bytes is None) == (file_path is None):
+        raise ValueError("必须提供且只能提供一个 Skill 上传来源")
+    file_size = len(file_bytes) if file_bytes is not None else file_path.stat().st_size
+    content_hash = (
+        hashlib.sha256(file_bytes).hexdigest()
+        if file_bytes is not None
+        else await calculate_path_sha256(file_path)
+    )
+
     normalized_filename = filename.lower()
     is_zip_upload = normalized_filename.endswith(".zip")
     is_skill_md_upload = normalized_filename.endswith("skill.md")
@@ -791,26 +862,46 @@ async def prepare_skill_upload(
     items_dir = draft_dir / "items"
     draft_dir.mkdir(parents=True, exist_ok=False)
     items_dir.mkdir(parents=True, exist_ok=True)
+    default_share_payload = _build_default_share_payload(operator)
+    scan_result: dict[str, Any] = {
+        "file_count": 1 if is_skill_md_upload else 0,
+        "archive_size_bytes": file_size,
+        "total_uncompressed_bytes": file_size if is_skill_md_upload else 0,
+        "warnings": [],
+    }
+    items: list[dict[str, Any]] = []
 
     try:
         with tempfile.TemporaryDirectory(prefix=".skill-prepare-", dir=str(get_skills_root_dir().parent)) as temp_root:
             extract_dir = Path(temp_root) / "extract"
             extract_dir.mkdir(parents=True, exist_ok=True)
             if is_zip_upload:
-                zip_path = Path(temp_root) / "upload.zip"
-                zip_path.write_bytes(file_bytes)
+                zip_path = file_path
+                if zip_path is None:
+                    zip_path = Path(temp_root) / "upload.zip"
+                    zip_path.write_bytes(file_bytes or b"")
                 with zipfile.ZipFile(zip_path, "r") as zf:
-                    _validate_zip_paths(zf)
-                    zf.extractall(extract_dir)
+                    scan_result = _validate_skill_zip_scan(zf, archive_size_bytes=file_size)
+                    _extract_validated_skill_zip(zf, extract_dir)
                 skill_md_files = list(extract_dir.rglob("SKILL.md"))
                 if len(skill_md_files) != 1:
                     raise ValueError("ZIP 必须且只能包含一个技能（检测到一个 SKILL.md）")
                 source_skill_dir = skill_md_files[0].parent
             else:
                 source_skill_dir = extract_dir
-                (source_skill_dir / "SKILL.md").write_bytes(file_bytes)
+                skill_md_path = source_skill_dir / "SKILL.md"
+                if file_path is not None:
+                    shutil.copyfile(file_path, skill_md_path)
+                else:
+                    skill_md_path.write_bytes(file_bytes or b"")
 
-            item = await _stage_skill_draft_item(repo, source_skill_dir=source_skill_dir, draft_items_dir=items_dir)
+            item = await _stage_skill_draft_item(
+                repo,
+                source_skill_dir=source_skill_dir,
+                draft_items_dir=items_dir,
+                warnings=scan_result.get("warnings") or [],
+            )
+            items = [item]
 
         data = {
             "draft_id": draft_dir.name,
@@ -819,13 +910,52 @@ async def prepare_skill_upload(
             "source": filename,
             "created_at": time.time(),
             "expires_at": time.time() + SKILL_DRAFT_TTL_SECONDS,
-            "items": [item],
-            **_build_default_share_payload(operator),
+            "items": items,
+            "scan_result": scan_result,
+            **default_share_payload,
         }
         (draft_dir / "metadata.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        await log_operation(
+            db,
+            getattr(operator, "id", None),
+            "skill_upload_prepare",
+            json.dumps(
+                {
+                    "operator_uid": operator.uid,
+                    "filename": filename,
+                    "file_size_bytes": file_size,
+                    "content_hash": content_hash,
+                    "is_zip": is_zip_upload,
+                    "slugs": [item.get("slug") for item in items if item.get("success")],
+                    "scan_result": scan_result,
+                    "visibility": data["default_share_config"],
+                    "result": {"status": "success"},
+                },
+                ensure_ascii=False,
+            ),
+        )
         return data
-    except Exception:
+    except Exception as e:
         shutil.rmtree(draft_dir, ignore_errors=True)
+        await log_operation(
+            db,
+            getattr(operator, "id", None),
+            "skill_upload_prepare",
+            json.dumps(
+                {
+                    "operator_uid": operator.uid,
+                    "filename": filename,
+                    "file_size_bytes": file_size,
+                    "content_hash": content_hash,
+                    "is_zip": is_zip_upload,
+                    "slugs": [item.get("slug") for item in items if item.get("success")],
+                    "scan_result": scan_result,
+                    "visibility": default_share_payload["default_share_config"],
+                    "result": {"status": "failed", "reason": str(e)},
+                },
+                ensure_ascii=False,
+            ),
+        )
         raise
 
 
@@ -872,6 +1002,24 @@ async def prepare_remote_skill_install(
             **_build_default_share_payload(operator),
         }
         (draft_dir / "metadata.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        await log_operation(
+            db,
+            getattr(operator, "id", None),
+            "remote_skill_prepare",
+            json.dumps(
+                {
+                    "source": source,
+                    "skills": skills,
+                    "draft_id": draft_dir.name,
+                    "result": {
+                        "total": len(items),
+                        "success": sum(1 for item in items if item.get("success")),
+                        "failed": sum(1 for item in items if not item.get("success")),
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        )
         return data
     except Exception:
         shutil.rmtree(draft_dir, ignore_errors=True)
@@ -887,14 +1035,51 @@ async def confirm_skill_install_draft(
     draft_id: str,
     share_config: dict | None,
     operator: User,
+    high_risk_confirmed: bool = False,
 ) -> list[dict[str, Any]]:
     draft_dir, data = _load_skill_draft(draft_id)
-    if data.get("created_by") != operator.uid and operator.role not in ADMIN_ROLES:
-        raise ValueError("无权确认该安装草稿")
-
     source_type = data.get("source_type")
     if source_type not in {"upload", "remote"}:
         raise ValueError("无效的安装草稿来源")
+
+    remote_skill_names = [str(item.get("slug") or "") for item in data.get("items") or []]
+    if source_type == "remote":
+        if operator.role not in ADMIN_ROLES:
+            await log_operation(
+                db,
+                getattr(operator, "id", None),
+                "remote_skill_confirm",
+                json.dumps(
+                    {
+                        "source": data.get("source"),
+                        "skills": remote_skill_names,
+                        "draft_id": draft_id,
+                        "high_risk_confirmed": high_risk_confirmed,
+                        "result": {"status": "denied", "reason": "non_admin"},
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            raise ValueError("无权确认远程 Skill 安装草稿")
+        if not high_risk_confirmed:
+            await log_operation(
+                db,
+                getattr(operator, "id", None),
+                "remote_skill_confirm",
+                json.dumps(
+                    {
+                        "source": data.get("source"),
+                        "skills": remote_skill_names,
+                        "draft_id": draft_id,
+                        "high_risk_confirmed": False,
+                        "result": {"status": "denied", "reason": "high_risk_not_confirmed"},
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            raise ValueError("远程 Skill 安装需要显式确认高风险操作")
+    elif data.get("created_by") != operator.uid and operator.role not in ADMIN_ROLES:
+        raise ValueError("无权确认该安装草稿")
 
     normalized_share_config = normalize_skill_share_config(
         share_config,
@@ -970,6 +1155,27 @@ async def confirm_skill_install_draft(
             if hasattr(db, "rollback"):
                 await db.rollback()
             results.append({"slug": slug, "success": False, "error": str(e)})
+
+    if source_type == "remote":
+        await log_operation(
+            db,
+            getattr(operator, "id", None),
+            "remote_skill_confirm",
+            json.dumps(
+                {
+                    "source": data.get("source"),
+                    "skills": remote_skill_names,
+                    "draft_id": draft_id,
+                    "high_risk_confirmed": high_risk_confirmed,
+                    "result": {
+                        "total": len(results),
+                        "success": sum(1 for item in results if item.get("success")),
+                        "failed": sum(1 for item in results if not item.get("success")),
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        )
 
     if any(item.get("success") for item in results):
         shutil.rmtree(draft_dir, ignore_errors=True)

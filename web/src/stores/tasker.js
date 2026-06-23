@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/user'
 import { parseToShanghai } from '@/utils/time'
 
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'queued'])
-const FAILED_STATUSES = new Set(['failed', 'cancelled'])
+const FAILED_STATUSES = new Set(['failed', 'cancelled', 'retryable_failed'])
 
 const createDefaultSummary = () => ({
   total: 0,
@@ -29,7 +29,12 @@ const toTask = (raw = {}) => ({
   payload: raw.payload || {},
   result: raw.result,
   error: raw.error,
-  cancel_requested: raw.cancel_requested || false
+  cancel_requested: raw.cancel_requested || false,
+  resource_key: raw.resource_key,
+  retry_of: raw.retry_of,
+  continuation_of: raw.continuation_of,
+  hard_timeout_seconds: raw.hard_timeout_seconds,
+  can_continue: Boolean(raw.can_continue)
 })
 
 export const useTaskerStore = defineStore('tasker', () => {
@@ -132,6 +137,21 @@ export const useTaskerStore = defineStore('tasker', () => {
     }
   }
 
+  async function continueTask(taskId) {
+    if (!taskId) return
+    try {
+      const response = await taskerApi.continueTask(taskId)
+      if (response?.task) {
+        upsertTask(response.task)
+      }
+      message.success(response?.deduplicated ? '已有继续任务正在执行' : '已创建继续执行任务')
+      await loadTasks()
+    } catch (error) {
+      console.error(`继续任务 ${taskId} 失败`, error)
+      message.error(error?.message || '继续任务失败')
+    }
+  }
+
   async function deleteTask(taskId) {
     if (!taskId) return
     try {
@@ -207,6 +227,7 @@ export const useTaskerStore = defineStore('tasker', () => {
     loadTasks,
     refreshTask,
     cancelTask,
+    continueTask,
     deleteTask,
     registerQueuedTask,
     startPolling,

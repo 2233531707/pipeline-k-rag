@@ -144,6 +144,8 @@ async def test_query_kb_allows_dify_knowledge_base(monkeypatch) -> None:
 
     assert result == {
         "kb_id": "db-1",
+        "status": "ok",
+        "warnings": [],
         "results": [
             {
                 "id": "dify-segment-1",
@@ -179,7 +181,30 @@ async def test_query_kb_ignores_graph_entity_ids_for_dify(monkeypatch) -> None:
         runtime=runtime,
     )
 
-    assert result == {"kb_id": "db-1", "results": []}
+    assert result == {"kb_id": "db-1", "status": "ok", "warnings": [], "results": []}
+
+
+@pytest.mark.asyncio
+async def test_query_kb_preserves_retrieval_status_warnings_and_request_id(monkeypatch) -> None:
+    async def _fake_retriever(query_text: str, **kwargs):
+        assert query_text == "auth"
+        return {
+            "kb_id": "db-1",
+            "status": "degraded",
+            "warnings": [{"component": "graph", "message": "neo4j unavailable"}],
+            "request_id": "retrieval-test",
+            "results": [],
+        }
+
+    _patch_retrievers(monkeypatch, retriever=_fake_retriever)
+    monkeypatch.setattr(tools, "_resolve_visible_knowledge_bases_for_query", _fake_visible_kbs)
+
+    runtime = SimpleNamespace(context=SimpleNamespace())
+    result = await _run_query_kb(kb_id="db-1", query_text="auth", runtime=runtime)
+
+    assert result["status"] == "degraded"
+    assert result["warnings"] == [{"component": "graph", "message": "neo4j unavailable", "details": {}}]
+    assert result["request_id"] == "retrieval-test"
 
 
 @pytest.mark.asyncio

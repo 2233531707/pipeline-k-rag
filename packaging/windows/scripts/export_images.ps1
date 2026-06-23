@@ -5,7 +5,7 @@ $RepoRoot = Resolve-Path (Join-Path $WindowsDir "..\..")
 $Output = Join-Path $WindowsDir "bundle\images\yuxi-images.tar"
 Push-Location $RepoRoot
 try {
-    $Images = docker compose config --images | Sort-Object -Unique
+    $Images = docker compose --env-file .env.desktop -f docker-compose.desktop.yml config --images | Sort-Object -Unique
     if ($Pull) {
         foreach ($Image in $Images) { docker pull $Image }
     }

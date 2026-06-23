@@ -1,20 +1,26 @@
+import tempfile
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from server.utils.auth_middleware import get_admin_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from server.utils.auth_middleware import get_admin_user, get_db
 from yuxi.knowledge.eval.benchmark_generation import (
     DEFAULT_BENCHMARK_GENERATION_CONCURRENCY,
     MAX_BENCHMARK_GENERATION_CONCURRENCY,
 )
 from yuxi.knowledge.eval.service import EvaluationService
+from yuxi.services.upload_audit_service import audit_upload
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import logger
+from yuxi.utils.upload_utils import UPLOAD_TEMP_DIR, calculate_path_sha256, write_upload_to_path
 
 
 evaluation = APIRouter(prefix="/evaluation", tags=["evaluation"])
+MAX_EVALUATION_JSONL_BYTES = 20 * 1024 * 1024
 
 
 class GenerateDatasetRequest(BaseModel):
@@ -45,24 +51,49 @@ async def upload_evaluation_dataset(
     name: str = Form(...),
     description: str = Form(""),
     current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """上传评估数据集"""
     try:
         if not file.filename.endswith(".jsonl"):
             raise HTTPException(status_code=400, detail="仅支持JSONL格式文件")
 
-        service = EvaluationService()
-        result = await service.upload_dataset(
-            kb_id=kb_id,
-            file_content=await file.read(),
-            filename=file.filename,
-            name=name,
-            description=description,
-            created_by=current_user.uid,
-        )
-        return {"message": "success", "data": result}
+        UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jsonl", dir=UPLOAD_TEMP_DIR) as temp_file:
+            temp_path = Path(temp_file.name)
+        try:
+            size = await write_upload_to_path(
+                file,
+                temp_path,
+                max_size_bytes=MAX_EVALUATION_JSONL_BYTES,
+                too_large_message="评估 JSONL 不能超过 20 MB",
+            )
+            service = EvaluationService()
+            result = await service.upload_dataset_from_path(
+                kb_id=kb_id,
+                file_path=temp_path,
+                filename=file.filename,
+                name=name,
+                description=description,
+                created_by=current_user.uid,
+            )
+            await audit_upload(
+                db=db,
+                user_id=getattr(current_user, "id", None),
+                entry="evaluation_jsonl",
+                filename=file.filename,
+                size=size,
+                detected_type=".jsonl",
+                content_hash=await calculate_path_sha256(temp_path),
+                result="success",
+            )
+            return {"message": "success", "data": result}
+        finally:
+            temp_path.unlink(missing_ok=True)
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception(f"上传评估数据集失败: {e}")
         raise HTTPException(status_code=500, detail=f"上传评估数据集失败: {str(e)}")
