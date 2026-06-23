@@ -153,7 +153,8 @@ class BaseAgent:
                 resource_fields = {
                     item["kind"]
                     for item in configurable_items.values()
-                    if item.get("kind") in {
+                    if item.get("kind")
+                    in {
                         "tools",
                         "knowledge_tools",
                         "knowledges",

@@ -115,13 +115,8 @@ def scan_zip_file(
 
         total_uncompressed += entry.file_size
         total_compressed += max(entry.compress_size, 0)
-        if (
-            policy.max_total_uncompressed_bytes is not None
-            and total_uncompressed > policy.max_total_uncompressed_bytes
-        ):
-            raise ValueError(
-                f"ZIP 解压总大小超限: {total_uncompressed} > {policy.max_total_uncompressed_bytes}"
-            )
+        if policy.max_total_uncompressed_bytes is not None and total_uncompressed > policy.max_total_uncompressed_bytes:
+            raise ValueError(f"ZIP 解压总大小超限: {total_uncompressed} > {policy.max_total_uncompressed_bytes}")
 
         if policy.max_compression_ratio is not None:
             if entry.file_size > 0 and entry.compress_size == 0:

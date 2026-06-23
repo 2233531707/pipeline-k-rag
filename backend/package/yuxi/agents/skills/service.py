@@ -846,9 +846,7 @@ async def prepare_skill_upload(
         raise ValueError("必须提供且只能提供一个 Skill 上传来源")
     file_size = len(file_bytes) if file_bytes is not None else file_path.stat().st_size
     content_hash = (
-        hashlib.sha256(file_bytes).hexdigest()
-        if file_bytes is not None
-        else await calculate_path_sha256(file_path)
+        hashlib.sha256(file_bytes).hexdigest() if file_bytes is not None else await calculate_path_sha256(file_path)
     )
 
     normalized_filename = filename.lower()

@@ -28,20 +28,12 @@ class KnowledgeGraphRepository:
     async def export_by_kb_id(self, kb_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         async with pg_manager.get_async_session_context() as session:
             entities = list(
-                (
-                    await session.execute(
-                        select(KnowledgeGraphEntity).where(KnowledgeGraphEntity.kb_id == kb_id)
-                    )
-                )
+                (await session.execute(select(KnowledgeGraphEntity).where(KnowledgeGraphEntity.kb_id == kb_id)))
                 .scalars()
                 .all()
             )
             triples = list(
-                (
-                    await session.execute(
-                        select(KnowledgeGraphTriple).where(KnowledgeGraphTriple.kb_id == kb_id)
-                    )
-                )
+                (await session.execute(select(KnowledgeGraphTriple).where(KnowledgeGraphTriple.kb_id == kb_id)))
                 .scalars()
                 .all()
             )

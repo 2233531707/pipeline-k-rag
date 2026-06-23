@@ -10,8 +10,7 @@ class SearchInputSchema(BaseModel):
     graph_entity_ids: list[str] | None = Field(
         default=None,
         description=(
-            "图谱实体 ID 列表，作为种子增强检索。"
-            "来自 query_knowledge_graph 的 retrieval_hints.graph_entity_ids"
+            "图谱实体 ID 列表，作为种子增强检索。来自 query_knowledge_graph 的 retrieval_hints.graph_entity_ids"
         ),
     )
 

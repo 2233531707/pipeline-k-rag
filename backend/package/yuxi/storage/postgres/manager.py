@@ -190,7 +190,8 @@ class PostgresManager(metaclass=SingletonMeta):
             """
             CREATE TABLE IF NOT EXISTS knowledge_spatial_layer_composition_items (
                 id SERIAL PRIMARY KEY,
-                composition_id VARCHAR(64) NOT NULL REFERENCES knowledge_spatial_layer_compositions(composition_id) ON DELETE CASCADE,
+                composition_id VARCHAR(64) NOT NULL REFERENCES
+                    knowledge_spatial_layer_compositions(composition_id) ON DELETE CASCADE,
                 layer_id VARCHAR(64) NOT NULL REFERENCES knowledge_spatial_layers(layer_id) ON DELETE CASCADE,
                 position INTEGER NOT NULL,
                 visible BOOLEAN NOT NULL DEFAULT TRUE,
@@ -399,7 +400,10 @@ class PostgresManager(metaclass=SingletonMeta):
             "CREATE INDEX IF NOT EXISTS idx_ksf_kb_id ON knowledge_spatial_features(kb_id)",
             "CREATE INDEX IF NOT EXISTS idx_ksf_geom ON knowledge_spatial_features USING GIST(geom)",
             "CREATE INDEX IF NOT EXISTS idx_ksc_kb_id ON knowledge_spatial_layer_compositions(kb_id)",
-            "CREATE INDEX IF NOT EXISTS idx_ksci_composition ON knowledge_spatial_layer_composition_items(composition_id)",
+            (
+                "CREATE INDEX IF NOT EXISTS idx_ksci_composition "
+                "ON knowledge_spatial_layer_composition_items(composition_id)"
+            ),
             "CREATE INDEX IF NOT EXISTS idx_ksci_layer ON knowledge_spatial_layer_composition_items(layer_id)",
             "CREATE INDEX IF NOT EXISTS ix_evaluation_datasets_kb_id ON evaluation_datasets(kb_id)",
             (

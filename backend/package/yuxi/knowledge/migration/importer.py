@@ -81,9 +81,7 @@ async def run_import(
         database_meta_path = tmp_dir / "database.json"
         database_meta = schemas.DatabaseMeta(name=package.database_name, kb_type=package.kb_type)
         if database_meta_path.is_file():
-            database_meta = schemas.DatabaseMeta.model_validate_json(
-                database_meta_path.read_text(encoding="utf-8")
-            )
+            database_meta = schemas.DatabaseMeta.model_validate_json(database_meta_path.read_text(encoding="utf-8"))
 
         created = await knowledge_base.create_database(
             _resolve_import_kb_name(package, target_name),

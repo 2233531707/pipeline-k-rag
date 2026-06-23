@@ -188,11 +188,7 @@ async def _load_enabled_mcp_server_configs(
 
             temp_dir = Path(tempfile.gettempdir()) / "yuxi-mcp"
             temp_dir.mkdir(parents=True, exist_ok=True)
-            safe_env = {
-                key: value
-                for key in ("PATH", "LANG", "LC_ALL")
-                if (value := os.getenv(key))
-            }
+            safe_env = {key: value for key in ("PATH", "LANG", "LC_ALL") if (value := os.getenv(key))}
             safe_env["TMPDIR"] = str(temp_dir)
             server_config.update(
                 command=builtin["command"],

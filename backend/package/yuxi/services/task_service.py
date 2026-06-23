@@ -99,9 +99,7 @@ class Task:
         data["continuation_of"] = meta.get("continuation_of")
         data["hard_timeout_seconds"] = meta.get("hard_timeout_seconds")
         data["logs"] = list(meta.get("logs") or [])
-        data["can_continue"] = bool(
-            self.status == RETRYABLE_FAILURE_STATUS and meta.get("continuation_available")
-        )
+        data["can_continue"] = bool(self.status == RETRYABLE_FAILURE_STATUS and meta.get("continuation_available"))
         return data
 
     def to_summary_dict(self) -> dict[str, Any]:

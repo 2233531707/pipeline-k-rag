@@ -72,7 +72,6 @@ async def write_upload_to_path(
         )
 
 
-
 async def calculate_path_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
     def calculate() -> str:
         digest = hashlib.sha256()
@@ -82,7 +81,6 @@ async def calculate_path_sha256(path: Path, *, chunk_size: int = 1024 * 1024) ->
         return digest.hexdigest()
 
     return await asyncio.to_thread(calculate)
-
 
 
 async def validate_upload_file_type(path: Path, filename: str) -> None:
@@ -104,9 +102,7 @@ async def validate_upload_file_type(path: Path, filename: str) -> None:
                 try:
                     with zipfile.ZipFile(path) as archive:
                         names = archive.namelist()
-                    valid = "[Content_Types].xml" in names and any(
-                        name.startswith(required_prefix) for name in names
-                    )
+                    valid = "[Content_Types].xml" in names and any(name.startswith(required_prefix) for name in names)
                 except (OSError, zipfile.BadZipFile):
                     valid = False
         elif suffix in {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}:
@@ -131,7 +127,6 @@ async def validate_upload_file_type(path: Path, filename: str) -> None:
             raise ValueError("文件真实类型与后缀不匹配")
 
     await asyncio.to_thread(validate)
-
 
 
 async def cleanup_stale_upload_files(

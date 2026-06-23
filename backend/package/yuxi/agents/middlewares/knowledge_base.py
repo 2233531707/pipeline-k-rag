@@ -28,6 +28,4 @@ class KnowledgeBaseMiddleware(AgentMiddleware):
             enabled_names = {name for name in enabled_tools if isinstance(name, str)}
             self.kb_tools = [tool for tool in all_kb_tools if tool.name in enabled_names]
         self.tools = self.kb_tools
-        logger.debug(
-            f"Initialized KnowledgeBaseMiddleware with {len(self.kb_tools)}/{len(all_kb_tools)} tools"
-        )
+        logger.debug(f"Initialized KnowledgeBaseMiddleware with {len(self.kb_tools)}/{len(all_kb_tools)} tools")

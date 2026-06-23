@@ -24,6 +24,7 @@ from yuxi.utils.zip_safety import ZipSafetyPolicy, safe_extract_zip, scan_zip_fi
 class ValidationError(Exception):
     """校验失败"""
 
+
 PORTABLE_KB_ZIP_POLICY = ZipSafetyPolicy(
     max_file_count=schemas.MAX_FILE_COUNT,
     max_single_file_bytes=schemas.MAX_SINGLE_FILE_BYTES,

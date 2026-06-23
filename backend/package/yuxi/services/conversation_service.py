@@ -589,6 +589,7 @@ async def upload_tmp_attachment_view(*, file: UploadFile, current_uid: str) -> d
         "content_hash": content_hash,
     }
 
+
 async def parse_tmp_attachment_view(
     *,
     object_name: str,
