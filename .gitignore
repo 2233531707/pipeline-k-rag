@@ -85,8 +85,10 @@ docs/.pnpm-store/
 
 # Portable knowledge packages and local data archives
 *.yuxikb.zip
+知识模型数据库.zip
 *.tar
 *.tar.gz
+tmp-*.png
 
 # Windows packaging build outputs
 packaging/windows/.build-venv/
