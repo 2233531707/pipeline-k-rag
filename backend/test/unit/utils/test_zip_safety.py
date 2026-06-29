@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import io
 import zipfile
+from pathlib import Path
 
 import pytest
 
-from yuxi.utils.zip_safety import ZipSafetyPolicy, scan_zip_file
+from yuxi.utils.zip_safety import ZipSafetyPolicy, safe_extract_zip, scan_zip_file
 
 
 def _zip_bytes(files: dict[str, bytes | str]) -> bytes:
@@ -42,3 +43,30 @@ def test_shared_zip_scan_reports_warning_extensions() -> None:
     )
 
     assert report.warnings == ["脚本风险: scripts/run.py"]
+
+
+def test_shared_zip_scan_accepts_windows_separators_for_normal_entries() -> None:
+    report = _scan(
+        {"scripts\\audit_uploaded_plan.py": "print(1)"},
+        ZipSafetyPolicy(warning_extensions=frozenset({".py"}), warning_extension_label="脚本风险"),
+    )
+
+    assert report.file_count == 1
+    assert report.warnings == ["脚本风险: scripts\\audit_uploaded_plan.py"]
+
+
+def test_safe_extract_zip_accepts_windows_directory_entries(tmp_path: Path) -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("backend\\configs\\", b"")
+        zf.writestr("backend\\configs\\rule_profiles\\urban.yaml", "name: urban\n")
+
+    extract_dir = tmp_path / "extract"
+    extract_dir.mkdir()
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue()), "r") as zf:
+        safe_extract_zip(zf, extract_dir)
+
+    assert (extract_dir / "backend" / "configs").is_dir()
+    assert (extract_dir / "backend" / "configs" / "rule_profiles" / "urban.yaml").read_text(
+        encoding="utf-8"
+    ) == "name: urban\n"

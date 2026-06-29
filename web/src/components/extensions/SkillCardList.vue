@@ -631,6 +631,8 @@ import ShareConfigForm from '@/components/ShareConfigForm.vue'
 import MarkdownPreview from '@/components/common/MarkdownPreview.vue'
 import { formatExtensionCardTitle } from '@/utils/extensionDisplayName'
 import { buildSkillDraftConfirmation } from '@/utils/skillInstallDraft'
+import { summarizeSkillConfirmResults } from '@/utils/skillConfirmResults'
+import { resolveSkillUploadFile } from '@/utils/skillUpload'
 
 const BookMarkedIcon = BookMarked
 const RECOMMENDED_SKILLS = [
@@ -1165,15 +1167,28 @@ const confirmSkillDraft = async () => {
       const res = await skillApi.confirmSkillInstallDraft(draftId, confirmation.payload)
       results.push(...(res?.data || []))
     }
-    const successCount = results.filter((item) => item.success).length
-    const failedCount = results.length - successCount
+    const { successCount, failedCount, firstError } = summarizeSkillConfirmResults(results)
     if (failedCount === 0) {
       message.success(`已添加 ${successCount} 个 Skill`)
+      remoteInstallModalVisible.value = false
+      resetDraftConfirmation()
+    } else if (successCount === 0) {
+      message.error(firstError || `添加失败：共 ${failedCount} 个 Skill 安装失败`)
+      pendingDraft.value = {
+        ...pendingDraft.value,
+        items: results.map((item) => ({
+          ...item,
+          name: item.name || item.slug,
+          description: item.error || item.description || '安装失败'
+        }))
+      }
+      await fetchSkills()
+      return
     } else {
       message.warning(`添加完成：成功 ${successCount} 个，失败 ${failedCount} 个`)
+      remoteInstallModalVisible.value = false
+      resetDraftConfirmation()
     }
-    remoteInstallModalVisible.value = false
-    resetDraftConfirmation()
     await fetchSkills()
   } catch (error) {
     message.error(error?.response?.data?.detail || error.message || '确认添加 Skill 失败')
@@ -1185,7 +1200,8 @@ const confirmSkillDraft = async () => {
 const handleImportUpload = async ({ file, onSuccess, onError }) => {
   importing.value = true
   try {
-    const result = await skillApi.prepareSkillUpload(file)
+    const uploadFile = resolveSkillUploadFile(file)
+    const result = await skillApi.prepareSkillUpload(uploadFile)
     if (await openDraftConfirmation(result?.data)) {
       message.success('解析完成，请确认 Skill 生效范围')
     }

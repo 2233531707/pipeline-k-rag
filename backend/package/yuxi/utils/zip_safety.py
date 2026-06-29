@@ -59,11 +59,10 @@ class ZipSafetyReport:
 def normalize_zip_entry_path(name: str, *, max_depth: int | None = None) -> PurePosixPath:
     if not name or "\x00" in name:
         raise ValueError("ZIP 包含非法路径")
-    if "\\" in name:
-        raise ValueError(f"ZIP 包含不安全路径分隔符: {name}")
-    if re.match(r"^[A-Za-z]:", name):
+    normalized_name = name.replace("\\", "/")
+    if re.match(r"^[A-Za-z]:", normalized_name):
         raise ValueError(f"ZIP 包含不安全绝对路径: {name}")
-    pure = PurePosixPath(name)
+    pure = PurePosixPath(normalized_name)
     if pure.is_absolute():
         raise ValueError(f"ZIP 包含不安全绝对路径: {name}")
     if ".." in pure.parts:
@@ -71,6 +70,12 @@ def normalize_zip_entry_path(name: str, *, max_depth: int | None = None) -> Pure
     if max_depth is not None and len(pure.parts) > max_depth:
         raise ValueError(f"ZIP 目录层级过深: {name}")
     return pure
+
+
+def is_zip_entry_dir(entry: zipfile.ZipInfo) -> bool:
+    if entry.is_dir():
+        return True
+    return entry.filename.endswith(("/", "\\"))
 
 
 def scan_zip_file(
@@ -95,16 +100,17 @@ def scan_zip_file(
     for entry in zip_file.infolist():
         pure = normalize_zip_entry_path(entry.filename, max_depth=policy.max_depth)
         suffix = Path(entry.filename).suffix.lower()
+        is_dir = is_zip_entry_dir(entry)
         entries.append(
             ZipSafetyEntry(
                 filename=entry.filename,
                 file_size=entry.file_size,
                 compress_size=max(entry.compress_size, 0),
                 suffix=suffix,
-                is_dir=entry.is_dir(),
+                is_dir=is_dir,
             )
         )
-        if entry.is_dir():
+        if is_dir:
             continue
 
         file_count += 1
@@ -165,12 +171,13 @@ def safe_extract_zip(zip_file: zipfile.ZipFile, extract_dir: Path) -> None:
     extract_root = extract_dir.resolve()
     for entry in zip_file.infolist():
         pure = normalize_zip_entry_path(entry.filename)
+        is_dir = is_zip_entry_dir(entry)
         target_path = (extract_root / pure).resolve()
         try:
             target_path.relative_to(extract_root)
         except ValueError:
             raise ValueError(f"ZIP 包含路径穿越片段: {entry.filename}") from None
-        if entry.is_dir():
+        if is_dir:
             target_path.mkdir(parents=True, exist_ok=True)
             continue
         target_path.parent.mkdir(parents=True, exist_ok=True)

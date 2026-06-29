@@ -1145,6 +1145,12 @@ async def confirm_skill_install_draft(
                         enabled=True,
                         created_by=operator.uid,
                     )
+                    try:
+                        _parse_skill_dir_metadata(final_dir)
+                    except Exception:
+                        await repo.delete(item)
+                        shutil.rmtree(final_dir, ignore_errors=True)
+                        raise
                     results.append({"slug": item.slug, "success": True, "skill": item.to_dict()})
                 except Exception:
                     shutil.rmtree(final_dir, ignore_errors=True)

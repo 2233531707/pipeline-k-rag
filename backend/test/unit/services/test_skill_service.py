@@ -807,6 +807,64 @@ async def test_skill_md_prepare_confirm_creates_single_file_skill(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_confirm_skill_install_draft_rolls_back_when_installed_skill_is_not_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(svc.sys_config, "save_dir", str(tmp_path))
+    skills_root = tmp_path / "skills"
+
+    class FakeRepo:
+        created_item: Skill | None = None
+        deleted_slugs: list[str] = []
+
+        def __init__(self, _db):
+            pass
+
+        async def exists_slug(self, _slug: str) -> bool:
+            return False
+
+        async def create(self, **kwargs) -> Skill:
+            item = Skill(**kwargs, updated_by=kwargs["created_by"])
+            self.__class__.created_item = item
+            skill_md = skills_root / item.slug / "SKILL.md"
+            if skill_md.exists():
+                skill_md.unlink()
+            return item
+
+        async def delete(self, item: Skill) -> None:
+            self.__class__.deleted_slugs.append(item.slug)
+
+    monkeypatch.setattr(svc, "SkillRepository", FakeRepo)
+
+    zip_bytes = _build_zip(
+        {
+            "pipeline-plan-auditor/SKILL.md": (
+                "---\nname: pipeline-plan-auditor\ndescription: pipeline plan auditor\n---\n# Auditor\n"
+            ),
+            "pipeline-plan-auditor/scripts/audit_uploaded_plan.py": "print('ok')\n",
+        }
+    )
+
+    draft = await svc.prepare_skill_upload(
+        None,
+        filename="pipeline-plan-auditor.zip",
+        file_bytes=zip_bytes,
+        operator=_user("root"),
+    )
+    results = await svc.confirm_skill_install_draft(
+        None,
+        draft_id=draft["draft_id"],
+        share_config=draft["default_share_config"],
+        operator=_user("root"),
+    )
+
+    assert results[0]["success"] is False
+    assert "SKILL.md" in results[0]["error"]
+    assert not (tmp_path / "skills" / "pipeline-plan-auditor").exists()
+    assert FakeRepo.deleted_slugs == ["pipeline-plan-auditor"]
+
+
+@pytest.mark.asyncio
 async def test_import_skill_dir_requires_root_skill_md(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(svc.sys_config, "save_dir", str(tmp_path))
     source_dir = tmp_path / "source-skill"
