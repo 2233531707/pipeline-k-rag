@@ -154,6 +154,50 @@ async def test_save_messages_from_langgraph_state_handles_dict_tool_call_blocks(
 
 
 @pytest.mark.asyncio
+async def test_save_messages_from_langgraph_state_reuses_runtime_model_context() -> None:
+    captured: dict[str, object] = {}
+
+    class FakeContext:
+        def __init__(self):
+            self.model = "siliconflow-cn:Pro/MiniMaxAI/MiniMax-M2.5"
+            self.thread_id = ""
+            self.uid = ""
+
+        def update_from_dict(self, data):
+            for key, value in data.items():
+                setattr(self, key, value)
+
+    class FakeGraph:
+        async def aget_state(self, _config):
+            return SimpleNamespace(values={"messages": [AIMessage(content="DeepSeek response")]})
+
+    class FakeAgent:
+        context_schema = FakeContext
+
+        async def get_graph(self, context=None):
+            captured["context"] = context
+            return FakeGraph()
+
+    conv_repo = _FakeConvRepo(None)
+
+    await svc.save_messages_from_langgraph_state(
+        agent_instance=FakeAgent(),
+        thread_id="thread-1",
+        conv_repo=conv_repo,
+        config_dict={"configurable": {"thread_id": "thread-1", "uid": "user-1"}},
+        trace_info=None,
+        input_context={
+            "model": "deepseek:deepseek-v4-pro",
+            "thread_id": "thread-1",
+            "uid": "user-1",
+        },
+    )
+
+    assert captured["context"].model == "deepseek:deepseek-v4-pro"
+    assert conv_repo.saved_messages[0]["content"] == "DeepSeek response"
+
+
+@pytest.mark.asyncio
 async def test_agent_chat_uses_invoke_messages_and_persists_langgraph_state(monkeypatch: pytest.MonkeyPatch):
     calls: dict[str, object] = {}
 
@@ -180,13 +224,16 @@ async def test_agent_chat_uses_invoke_messages_and_persists_langgraph_state(monk
     async def fake_resolve_agent_runtime(**_kwargs):
         return SimpleNamespace(slug="test-agent", backend_id="ChatbotAgent"), FakeAgent(), {"temperature": 0.1}
 
-    async def fake_save_messages_from_langgraph_state(*, agent_instance, thread_id, conv_repo, config_dict, trace_info):
+    async def fake_save_messages_from_langgraph_state(
+        *, agent_instance, thread_id, conv_repo, config_dict, trace_info, input_context=None
+    ):
         calls["saved_state"] = {
             "agent_instance": agent_instance,
             "thread_id": thread_id,
             "conv_repo": conv_repo,
             "config_dict": config_dict,
             "trace_info": trace_info,
+            "input_context": input_context,
         }
 
     async def fake_guard_check(_content):
@@ -250,6 +297,7 @@ async def test_agent_chat_uses_invoke_messages_and_persists_langgraph_state(monk
     }
     assert calls["saved_state"]["thread_id"] == "thread-1"
     assert calls["saved_state"]["config_dict"] == {"configurable": {"thread_id": "thread-1", "uid": "user-1"}}
+    assert calls["saved_state"]["input_context"] == calls["invoke_input_context"]
     assert calls["saved_state"]["trace_info"] == {
         "langfuse_trace_id": "trace-runtime",
         "langfuse_session_id": "thread-1",
@@ -283,7 +331,9 @@ async def test_agent_chat_sync_returns_finished_even_when_state_has_interrupt(mo
     async def fake_resolve_agent_runtime(**_kwargs):
         return SimpleNamespace(slug="test-agent", backend_id="ChatbotAgent"), FakeAgent(), {}
 
-    async def fake_save_messages_from_langgraph_state(*, agent_instance, thread_id, conv_repo, config_dict, trace_info):
+    async def fake_save_messages_from_langgraph_state(
+        *, agent_instance, thread_id, conv_repo, config_dict, trace_info, input_context=None
+    ):
         return None
 
     async def fake_guard_check(_content):

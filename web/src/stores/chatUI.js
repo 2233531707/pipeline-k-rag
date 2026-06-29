@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+import { DEFAULT_SIDEBAR_WIDTH, normalizeSidebarWidth } from '@/utils/sidebarNav'
+
 export const useChatUIStore = defineStore(
   'chatUI',
   () => {
@@ -10,6 +12,7 @@ export const useChatUIStore = defineStore(
 
     // 应用侧边栏折叠态
     const sidebarCollapsed = ref(false)
+    const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH)
 
     // 更多菜单
     const moreMenuOpen = ref(false)
@@ -33,6 +36,14 @@ export const useChatUIStore = defineStore(
       moreMenuOpen.value = false
     }
 
+    function setSidebarWidth(width, viewportWidth) {
+      sidebarWidth.value = normalizeSidebarWidth(width, viewportWidth)
+    }
+
+    function resetSidebarWidth() {
+      sidebarWidth.value = DEFAULT_SIDEBAR_WIDTH
+    }
+
     /**
      * 重置所有 UI 状态（不包括持久化状态）
      */
@@ -46,12 +57,15 @@ export const useChatUIStore = defineStore(
       // 状态
       isLoadingMessages,
       sidebarCollapsed,
+      sidebarWidth,
       moreMenuOpen,
       moreMenuPosition,
 
       // 方法
       openMoreMenu,
       closeMoreMenu,
+      setSidebarWidth,
+      resetSidebarWidth,
       reset
     }
   },
@@ -59,7 +73,7 @@ export const useChatUIStore = defineStore(
     persist: {
       key: 'chat-ui-store',
       storage: localStorage,
-      pick: ['sidebarCollapsed']
+      pick: ['sidebarCollapsed', 'sidebarWidth']
     }
   }
 )
