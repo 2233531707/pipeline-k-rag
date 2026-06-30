@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>配置服务器地址</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          "Microsoft YaHei",
+          "Segoe UI",
+          sans-serif;
+        color: #172033;
+        background: #f5f7fb;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+      }
+
+      main {
+        width: min(560px, calc(100vw - 48px));
+        background: #fff;
+        border: 1px solid #dfe5ef;
+        border-radius: 8px;
+        padding: 28px;
+        box-shadow: 0 18px 48px rgba(30, 42, 68, 0.12);
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        font-weight: 650;
+      }
+
+      p {
+        margin: 0 0 22px;
+        color: #5d687a;
+        line-height: 1.7;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        height: 42px;
+        border: 1px solid #c8d1df;
+        border-radius: 6px;
+        padding: 0 12px;
+        font-size: 15px;
+      }
+
+      input:focus {
+        outline: 2px solid #8db7ff;
+        border-color: #4f86d9;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 18px;
+      }
+
+      button {
+        min-width: 96px;
+        height: 38px;
+        border: 0;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      button.primary {
+        color: #fff;
+        background: #2458b8;
+      }
+
+      button.secondary {
+        color: #26354f;
+        background: #e9eef6;
+      }
+
+      .message {
+        min-height: 20px;
+        margin-top: 14px;
+        color: #b42318;
+        font-size: 13px;
+      }
+
+      .paths {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid #edf1f7;
+        color: #687386;
+        font-size: 12px;
+        line-height: 1.6;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>配置服务器地址</h1>
+      <p>请输入已经部署好的 Yuxi Web 访问地址。保存后会清理当前窗口的 Web 登录态，并打开该地址。</p>
+
+      <form id="form">
+        <label for="webUrl">Web 地址</label>
+        <input id="webUrl" name="webUrl" placeholder="https://app.example.com" autocomplete="url" required />
+        <div class="actions">
+          <button class="secondary" type="button" id="open">打开当前地址</button>
+          <button class="primary" type="submit">保存并打开</button>
+        </div>
+        <div class="message" id="message"></div>
+      </form>
+
+      <div class="paths" id="paths"></div>
+    </main>
+
+    <script>
+      const form = document.querySelector('#form')
+      const input = document.querySelector('#webUrl')
+      const message = document.querySelector('#message')
+      const openButton = document.querySelector('#open')
+      const paths = document.querySelector('#paths')
+
+      function validateUrl(value) {
+        const url = new URL(value)
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          throw new Error('服务器地址必须以 http:// 或 https:// 开头')
+        }
+        return url.toString().replace(/\/$/, '')
+      }
+
+      async function loadConfig() {
+        const config = await window.yuxiWebShell.getConfig()
+        input.value = config.webUrl || ''
+        paths.textContent = `同目录预置配置：${config.externalConfigPath}\n用户保存配置：${config.userConfigPath}`
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault()
+        message.textContent = ''
+        try {
+          const webUrl = validateUrl(input.value)
+          await window.yuxiWebShell.saveConfig({ webUrl })
+          await window.yuxiWebShell.openTarget()
+        } catch (error) {
+          message.textContent = error.message || String(error)
+        }
+      })
+
+      openButton.addEventListener('click', async () => {
+        message.textContent = ''
+        await window.yuxiWebShell.openTarget()
+      })
+
+      loadConfig().catch((error) => {
+        message.textContent = error.message || String(error)
+      })
+    </script>
+  </body>
+</html>

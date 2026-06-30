@@ -1,0 +1,37 @@
+{
+  "name": "yuxi-web-shell",
+  "version": "0.1.0",
+  "description": "Yuxi Web URL shell for Windows portable delivery.",
+  "private": true,
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron .",
+    "dist:portable": "electron-builder --win portable --publish never"
+  },
+  "devDependencies": {
+    "@electron/get": "3.1.0",
+    "electron": "^37.2.0",
+    "electron-builder": "26.15.5"
+  },
+  "build": {
+    "appId": "com.yuxi.webshell",
+    "productName": "地下管网知识模型数据库 Web 入口",
+    "directories": {
+      "output": "../dist/web-shell",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.html",
+      "README.md",
+      "config.sample.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  }
+}

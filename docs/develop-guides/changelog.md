@@ -56,6 +56,7 @@
 - 补录桌面前端客户端第二轮 GUI 验收进展：最终 `portable exe` 已实机走通连接页健康检查、返回登录页、普通用户重新登录、附件进入 Run、工作区知识库目录展示、`MD` 与原 PDF 双模式预览，以及切换服务器后的登录态/当前线程/可见草稿与预览清理；当前剩余人工验收项收敛为“会话地图结果的真实组件级渲染与交互证据”。
 - 完成桌面前端客户端第二轮任务收尾：通过 Electron CDP 补齐最终 GUI 验收中的地图结论，确认历史线程里 `show_spatial_map` 工具卡可在桌面端真实展开并渲染 `SpatialMapResult` 错误态；同时确认最终验收线程 `7abf72ec-0183-469f-900e-01f41e2e4dd6` 对应 run `40ccb0fb-35c7-44bd-a4eb-c926d5fd92c8` 仍卡在后端 `running`，因此第二轮前端范围正式收尾，地图正向渲染未拿到的阻塞归因为运行态/后端工具执行而非桌面前端适配。
 - 修复空间地图会话链路的三处后端阻塞：`spatial_tools.py` 移除未来注解字符串化，使 `list_spatial_layers`、`query_spatial_features`、`show_spatial_map` 在当前 LangChain/LangGraph 版本下继续被正确识别为 `runtime: ToolRuntime` 注入参数；`backend/package/yuxi/agents/base.py` 在打开 LangGraph sqlite checkpointer 前增加完整性检查，发现 `aio_history.db` 及其 `-wal/-shm` sidecar 损坏时自动隔离并重建，避免历史坏 checkpoint 持续拖住新 run；`backend/package/yuxi/agents/buildin/chatbot/prompt.py` 增加空间地图任务约束，要求默认智能体遇到 `jspoint/jsline/空间图层/地图` 线索时优先走知识库空间工具而不是误用文件系统工具。补充空间工具注入、checkpoint 恢复和 prompt 路由单元测试后，真实新 run 已确认按 `list_kbs -> list_spatial_layers -> query_spatial_features -> show_spatial_map -> completed` 路径跑通，原“所有知识库均不可访问”并非权限配置问题。
+- 新增 Web 前后端分离部署交付路径：前端静态资源可打包为版本化 zip 交给外部 Nginx/CDN，同源 `/api` 反代独立后端 API；新增 Electron BrowserWindow Web URL 壳作为免安装 exe 入口，并补充正式部署文档、Nginx 示例和构建脚本。
 
 - 重写项目入口、快速开始、生产部署和目录结构文档：统一“地下管网知识模型数据库”品牌，修正生产 `--env-file`、默认分支、容器测试路径和 isolated 前端构建说明，并明确 Git 发布排除范围。
 - 发布版本号更新至 `0.7.0.beta2`，同步 package、Docker 镜像标签与快速开始分支引用。

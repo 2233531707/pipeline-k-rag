@@ -62,6 +62,7 @@ export default defineConfig({
           { text: '品牌自定义', link: '/advanced/branding' },
           { text: '其他配置', link: '/advanced/misc' },
           { text: '生产部署', link: '/advanced/deployment' },
+          { text: 'Web 前后端分离部署', link: '/advanced/web-separated-deployment' },
           { text: 'Windows 桌面客户端', link: '/advanced/windows-package' },
           { text: 'API Key 外部集成', link: '/advanced/api-key-integration' }
         ]
