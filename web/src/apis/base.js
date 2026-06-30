@@ -1,5 +1,6 @@
 import { useUserStore, checkAdminPermission, checkSuperAdminPermission } from '@/stores/user'
 import { message } from 'ant-design-vue'
+import { redirectToLogin, resolveApiUrl } from '@/runtime/desktop'
 
 /**
  * 基础API请求封装
@@ -25,13 +26,22 @@ function buildApiErrorLogSummary(url, response, requestOptions) {
 
 export async function apiRequest(url, options = {}, requiresAuth = true, responseType = 'json') {
   try {
-    const isFormData = options?.body instanceof FormData
+    const { baseUrl = '', ...fetchOptions } = options
+    const resolvedUrl = resolveApiUrl(url, baseUrl)
+    const isFormData = fetchOptions?.body instanceof FormData
     // 默认请求配置
+    const defaultHeaders = {}
+    const method = String(fetchOptions.method || 'GET').toUpperCase()
+    const hasRequestBody = fetchOptions.body !== undefined && fetchOptions.body !== null
+    if (!isFormData && hasRequestBody && method !== 'GET' && method !== 'HEAD') {
+      defaultHeaders['Content-Type'] = 'application/json'
+    }
+
     const requestOptions = {
-      ...options,
+      ...fetchOptions,
       headers: {
-        ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
-        ...options.headers
+        ...defaultHeaders,
+        ...fetchOptions.headers
       }
     }
 
@@ -46,7 +56,7 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
     }
 
     // 发送请求
-    const response = await fetch(url, requestOptions)
+    const response = await fetch(resolvedUrl, requestOptions)
 
     // 处理API返回的错误
     if (!response.ok) {
@@ -54,7 +64,7 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
       let errorMessage = `请求失败: ${response.status}, ${response.statusText}`
       let errorData = null
 
-      const errorLogSummary = buildApiErrorLogSummary(url, response, requestOptions)
+      const errorLogSummary = buildApiErrorLogSummary(resolvedUrl, response, requestOptions)
       console.warn('API请求失败:', errorLogSummary)
 
       try {
@@ -102,7 +112,7 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
 
         // 使用setTimeout确保消息显示后再跳转
         setTimeout(() => {
-          window.location.href = '/login'
+          redirectToLogin()
         }, 1500)
 
         throw error
@@ -138,6 +148,10 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
     }
     throw error
   }
+}
+
+export function apiUrl(url, baseUrl = '') {
+  return resolveApiUrl(url, baseUrl)
 }
 
 /**

@@ -5,25 +5,39 @@
     </div>
 
     <div class="kb-results" v-if="normalizedChunks.length > 0">
-      <div v-for="fileGroup in fileGroupList" :key="fileGroup.filename" class="file-group">
+      <div
+        v-for="fileGroup in fileGroupList"
+        :key="`${fileGroup.kbId}:${fileGroup.fileId}:${fileGroup.filename}`"
+        class="file-group"
+      >
         <div
           class="file-header"
-          :class="{ expanded: expandedFiles.has(fileGroup.filename) }"
-          @click="toggleFile(fileGroup.filename)"
+          :class="{ expanded: expandedFiles.has(fileGroup.groupKey) }"
+          @click="toggleFile(fileGroup.groupKey)"
         >
           <div class="file-info">
             <FileText :size="14" color="var(--gray-600)" />
             <span class="file-name">{{ fileGroup.filename }}</span>
             <span class="chunk-count">{{ fileGroup.chunks.length }} chunks</span>
           </div>
-          <ChevronDown
-            :size="14"
-            class="expand-icon"
-            :class="{ rotated: expandedFiles.has(fileGroup.filename) }"
-          />
+          <div class="file-actions">
+            <button
+              v-if="showOpenSource && fileGroup.kbId && fileGroup.fileId"
+              type="button"
+              class="open-source-btn"
+              @click.stop="openSourceFile(fileGroup)"
+            >
+              查看原文
+            </button>
+            <ChevronDown
+              :size="14"
+              class="expand-icon"
+              :class="{ rotated: expandedFiles.has(fileGroup.groupKey) }"
+            />
+          </div>
         </div>
 
-        <div v-if="expandedFiles.has(fileGroup.filename)" class="chunks-container">
+        <div v-if="expandedFiles.has(fileGroup.groupKey)" class="chunks-container">
           <div
             v-for="(chunk, index) in fileGroup.chunks"
             :key="getChunkKey(chunk, index)"
@@ -65,6 +79,7 @@
 import { computed, ref, watch } from 'vue'
 import { FileText, ChevronDown, Eye } from 'lucide-vue-next'
 import KbChunkDetailModal from './KbChunkDetailModal.vue'
+import { buildKnowledgeSourceGroups } from '@/utils/knowledgeSources'
 
 const props = defineProps({
   chunks: {
@@ -78,8 +93,13 @@ const props = defineProps({
   emptyText: {
     type: String,
     default: '未找到相关知识库内容'
+  },
+  showOpenSource: {
+    type: Boolean,
+    default: false
   }
 })
+const emit = defineEmits(['open-source'])
 
 const expandedFiles = ref(new Set())
 const modalVisible = ref(false)
@@ -125,19 +145,10 @@ const normalizedChunks = computed(() =>
 )
 
 const fileGroupList = computed(() => {
-  const groups = new Map()
-  for (const item of normalizedChunks.value) {
-    const filename = item?.metadata?.source || '未知来源'
-    if (!groups.has(filename)) {
-      groups.set(filename, {
-        filename,
-        chunks: []
-      })
-    }
-    groups.get(filename).chunks.push(item)
-  }
-
-  return Array.from(groups.values()).sort((a, b) => a.filename.localeCompare(b.filename))
+  return buildKnowledgeSourceGroups(normalizedChunks.value).map((group) => ({
+    ...group,
+    groupKey: `${group.kbId}:${group.fileId}:${group.filename}`
+  }))
 })
 
 watch(
@@ -146,18 +157,26 @@ watch(
     // 分组变化时仅清理失效展开项，默认保持折叠状态。
     const validFilenames = new Set(groups.map((item) => item.filename))
     expandedFiles.value = new Set(
-      [...expandedFiles.value].filter((filename) => validFilenames.has(filename))
+      [...expandedFiles.value].filter((groupKey) =>
+        groups.some((item) => item.groupKey === groupKey || validFilenames.has(item.filename))
+      )
     )
   },
   { immediate: true }
 )
 
-const toggleFile = (filename) => {
-  if (expandedFiles.value.has(filename)) {
-    expandedFiles.value.delete(filename)
+const toggleFile = (groupKey) => {
+  if (expandedFiles.value.has(groupKey)) {
+    expandedFiles.value.delete(groupKey)
   } else {
-    expandedFiles.value.add(filename)
+    expandedFiles.value.add(groupKey)
   }
+}
+
+const openSourceFile = (fileGroup) => {
+  const firstChunk = fileGroup?.chunks?.[0]
+  if (!firstChunk) return
+  emit('open-source', firstChunk)
 }
 
 const getChunkKey = (chunk, index) => {
@@ -249,6 +268,28 @@ const openChunkDetail = (chunk, index) => {
 
         &.rotated {
           transform: rotate(180deg);
+        }
+      }
+
+      .file-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .open-source-btn {
+        border: 1px solid var(--gray-150);
+        border-radius: 6px;
+        background: var(--gray-0);
+        color: var(--gray-700);
+        font-size: 11px;
+        line-height: 1;
+        padding: 5px 8px;
+        cursor: pointer;
+
+        &:hover {
+          color: var(--main-700);
+          border-color: var(--main-200);
         }
       }
     }

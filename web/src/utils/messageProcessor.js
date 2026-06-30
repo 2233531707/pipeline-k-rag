@@ -132,10 +132,12 @@ export class MessageProcessor {
       const score = typeof chunk.score === 'number' ? chunk.score : null
       normalizedChunks.push({
         kb_name: kbName,
+        kb_id: chunk.kb_id || metadata.kb_id || '',
         content,
         score,
         metadata: {
           source: metadata.source || '',
+          kb_id: chunk.kb_id || metadata.kb_id || '',
           file_id: metadata.file_id || '',
           chunk_id: metadata.chunk_id || '',
           chunk_index: metadata.chunk_index

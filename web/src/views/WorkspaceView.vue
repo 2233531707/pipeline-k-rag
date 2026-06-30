@@ -154,6 +154,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ChevronLeft, ChevronRight, LibraryBig } from 'lucide-vue-next'
 import PageHeader from '@/components/shared/PageHeader.vue'
@@ -175,8 +176,12 @@ import {
   saveWorkspaceFileContent,
   uploadWorkspaceFiles
 } from '@/apis/workspace_api'
+import { canSwitchKnowledgePreviewVariant } from '@/utils/knowledgePreviewVariants'
+import { parseKnowledgeSourceRouteTarget } from '@/utils/knowledgeSources'
 
 const userStore = useUserStore()
+const route = useRoute()
+const router = useRouter()
 
 const activeSourceKey = ref('personal')
 const currentPath = ref('/')
@@ -234,6 +239,8 @@ const filteredEntries = computed(() => {
       .includes(keyword)
   )
 })
+
+const activeKnowledgeSourceTarget = computed(() => parseKnowledgeSourceRouteTarget(route.query))
 
 const selectedEntries = computed(() => {
   const selectedPathSet = new Set(selectedPaths.value)
@@ -463,6 +470,28 @@ const loadDatabases = async () => {
   }
 }
 
+const openKnowledgeSourceTarget = async (target) => {
+  if (!target) return
+
+  const database = databases.value.find((item) => item?.kb_id === target.kbId)
+  if (!database) return
+
+  selectedDatabase.value = database
+  activeSourceKey.value = `database:${database.kb_id}`
+  await loadKnowledgeEntries(database)
+
+  await loadKnowledgePreview(
+    {
+      source: 'knowledge',
+      kb_id: target.kbId,
+      file_id: target.fileId,
+      name: target.name || target.fileId,
+      default_preview_mode: target.variant
+    },
+    target.variant
+  )
+}
+
 const selectPersonalWorkspace = async () => {
   const wasKnowledgeSource = isKnowledgeSource.value
   activeSourceKey.value = 'personal'
@@ -552,8 +581,15 @@ const handleSelectEntry = async (entry) => {
 const handleSwitchKnowledgeVariant = async (variant) => {
   const entry = selectedEntry.value
   if (!entry || entry.source !== 'knowledge' || !entry.kb_id || !entry.file_id) return
-  if (previewFile.value?.variant === variant || previewFile.value?.previewVariant === variant)
+  if (
+    !canSwitchKnowledgePreviewVariant({
+      currentVariant: previewFile.value?.variant || previewFile.value?.previewVariant || '',
+      nextVariant: variant,
+      variants: previewFile.value?.availableVariants || previewFile.value?.available_variants || []
+    })
+  ) {
     return
+  }
 
   await loadKnowledgePreview(
     entry,
@@ -795,6 +831,9 @@ let workspaceResizeObserver = null
 
 onMounted(async () => {
   await Promise.all([loadWorkspaceEntries('/'), loadDatabases()])
+  if (activeKnowledgeSourceTarget.value) {
+    await openKnowledgeSourceTarget(activeKnowledgeSourceTarget.value)
+  }
 
   if (workspaceMainRef.value && typeof ResizeObserver !== 'undefined') {
     workspaceMainWidth.value = workspaceMainRef.value.clientWidth || 0
@@ -829,6 +868,21 @@ watch(useInlinePreview, (isInline, wasInline) => {
     closePreview()
   }
 })
+
+watch(
+  activeKnowledgeSourceTarget,
+  async (target) => {
+    if (!target || !databases.value.length) return
+    await openKnowledgeSourceTarget(target)
+    await router.replace({
+      path: route.path,
+      query: Object.fromEntries(
+        Object.entries(route.query).filter(([key]) => !['kb_id', 'file_id', 'variant', 'name'].includes(key))
+      )
+    })
+  },
+  { deep: true }
+)
 </script>
 
 <style scoped lang="less">

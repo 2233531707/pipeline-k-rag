@@ -1,32 +1,45 @@
-# Windows 启动器与安装包
+# Windows 桌面前端客户端
 
-Windows 交付源码位于 `packaging/windows`。启动器负责检查 Docker Desktop、WSL2、Docker daemon 与 Compose，初始化 `.env.desktop`，为桌面本地服务生成随机密钥，并提供启动、停止、重启、日志、打开 Web 和健康检查操作。
+Windows 首版交付目标是生成 Electron 桌面前端客户端。客户端只承载地下管网知识模型数据库的前端界面和后端地址配置，不安装、不启动、不停止后端程序，也不管理 PostgreSQL/PostGIS、Redis、MinIO、Milvus、Neo4j、Worker 或智能体沙盒。
 
-## 构建
+## 交付边界
 
-在 Windows PowerShell 中执行：
+- 客户端连接独立后端服务器，例如 `https://yuxi.example.com`。
+- 客户端不得携带数据库、对象存储、向量库、图数据库或后端运行时。
+- 客户端不管理任何本地 Compose 或服务端运行配置。
+- 后端部署、升级、备份、日志、监控和沙盒运行由服务器部署链路负责。
+- 开发栈和 isolated 验收栈继续使用 Docker Compose，不作为桌面客户端运行方式。
 
-```powershell
-cd packaging/windows
-.\scripts\build_launcher.ps1
-.\scripts\build_installer.ps1
-.\scripts\test_installer.ps1
-```
+## 客户端职责
 
-`build_launcher.ps1` 使用 PyInstaller 生成启动器；`build_installer.ps1` 调用 NSIS `makensis` 生成 `dist\地下管网知识模型数据库.exe`。构建机需要 Python 3.12+、Docker Desktop 和 NSIS 3。若启动器 EXE 已存在，只重建安装器时不需要重新安装 Python。
+桌面客户端应只覆盖以下能力：
 
-安装包使用运行时白名单，只包含后端、Docker、Web 源码及必要根配置，不包含 `.git`、`.env*`、迁移包、数据库文件、Docker 数据卷、日志或缓存。安装路径默认为：
+1. 首次启动配置后端服务器地址。
+2. 对配置地址执行健康检查。
+3. 加载前端应用并通过后端 API 完成用户名密码登录、独立后端服务器首启初始化和主智能体对话。
+4. 保存客户端侧非敏感偏好，例如最近使用的后端地址。
+5. 通过桌面端安全存储保存认证 token。
+6. 为第三方系统提供可启动的 `portable exe` 入口。
 
-```text
-%LOCALAPPDATA%\地下管网知识模型数据库
-```
+## 首版构建入口
 
-该路径对当前用户可写，启动器可以正常初始化 `.env.desktop`、生成本地随机密钥并保存运行数据。桌面 Compose 默认只暴露 Web 入口，数据库、Redis、MinIO、Milvus 与 Neo4j 不暴露到宿主机；沙盒容器默认进入 internal sandbox network，Docker socket 仅由 sandbox-provisioner 持有。安装包内同时提供“使用教程”开始菜单入口。
+首版 Electron 客户端工程位于 `packaging/windows/electron/`，Windows `portable exe` 构建脚本位于 `packaging/windows/scripts/build_electron_portable.ps1`。
 
-## 数据保护
+构建前提：
 
-安装包不会执行 `docker compose down -v`。重新安装时若目标目录已有 `.env.desktop`，启动器保留原文件，仅补充模板中缺失的必填键。卸载前应先在启动器中停止服务；如需长期保留数据，请备份安装目录下的 `app\docker\volumes`，并保留 Docker 的 `postgres_data` 命名卷。
+- 已完成 `web/` 前端依赖安装与可构建状态；
+- Windows 构建机具备 Node.js、pnpm 和 Electron Builder 运行环境；
+- 独立后端服务器地址可在运行时配置，或通过 `YUXI_DESKTOP_DEFAULT_BACKEND_URL` 预置默认值。
 
-## 离线镜像
+## 服务端要求
 
-`scripts/export_images.ps1` 可按 bundle 中的 Compose 配置导出镜像。大体积镜像归档不提交到 Git；发布时与安装包一同分发或由安装器按需下载。
+独立后端服务器需要按生产部署文档准备，并显式允许桌面客户端来源：
+
+- Web/API 推荐使用 HTTPS。
+- 桌面首版使用 `kb-desktop://app` 自定义协议，需要在服务端 `CORS_ALLOW_ORIGINS` 中显式配置。
+- 文件下载、SSE/流式事件和桌面端登录链路需要在客户端壳内完成端到端验证。
+- 桌面首版不支持 OIDC 登录。
+
+## 范围约束
+
+Windows 桌面客户端只承载前端入口、连接配置和桌面端认证存储。不要向该目录继续加入服务端部署、运行时编排或本地基础设施管理能力。

@@ -16,17 +16,20 @@
 
     <!-- 顶部导航：品牌名称 & 操作按钮 -->
     <nav class="login-navbar">
-      <div class="navbar-content">
-        <div class="brand-container" @click="goHome" style="cursor: pointer">
-          <img v-if="brandLogo" :src="brandLogo" alt="logo" class="brand-logo" />
-          <h1 class="brand-text">
-            <span v-if="brandOrgName" class="brand-org">{{ brandOrgName }}</span>
-            <span v-if="brandOrgName && brandName !== brandOrgName" class="brand-separator"></span>
-            <span class="brand-main">{{ brandName }}</span>
-          </h1>
+        <div class="navbar-content">
+          <div class="brand-container" @click="goHome" style="cursor: pointer">
+            <img v-if="brandLogo" :src="brandLogo" alt="logo" class="brand-logo" />
+            <h1 class="brand-text">
+              <span v-if="brandOrgName" class="brand-org">{{ brandOrgName }}</span>
+              <span v-if="brandOrgName && brandName !== brandOrgName" class="brand-separator"></span>
+              <span class="brand-main">{{ brandName }}</span>
+            </h1>
+          </div>
+          <a-button v-if="isDesktop" type="link" size="small" @click="goToConnectionConfig">
+            切换服务器
+          </a-button>
         </div>
-      </div>
-    </nav>
+      </nav>
 
     <!-- 主要内容区：居中卡片 -->
     <main class="login-main">
@@ -60,10 +63,14 @@
             </div>
             <header class="form-header">
               <!-- 如果是在初始化，显示特定标题 -->
-              <h2 v-if="isFirstRun" class="init-title">系统初始化，请创建超级管理员</h2>
+              <h2 v-if="isFirstRun" class="init-title">独立后端服务器首启初始化，请创建超级管理员</h2>
               <h2 v-else class="welcome-text">欢迎回来</h2>
               <p class="form-description">
-                {{ isFirstRun ? '创建首个管理员账户后即可开始配置平台。' : '登录后进入智能体工作台。' }}
+                {{
+                  isFirstRun
+                    ? '创建首个超级管理员账户后即可开始使用独立后端服务器。'
+                    : '登录后进入主智能体工作台。'
+                }}
               </p>
             </header>
 
@@ -239,7 +246,7 @@
                 </a-form>
 
                 <!-- OIDC 登录选项  -->
-                <div v-if="oidcChecking || oidcEnabled" class="third-party-login">
+                <div v-if="!isDesktop && (oidcChecking || oidcEnabled)" class="third-party-login">
                   <div class="divider">
                     <span>或使用以下方式登录</span>
                   </div>
@@ -300,12 +307,14 @@ import {
   Key as KeyIcon,
   AlertCircle as ExclamationCircleIcon
 } from 'lucide-vue-next'
+import { isDesktopMode } from '@/runtime/desktop'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const infoStore = useInfoStore()
 const agentStore = useAgentStore()
+const isDesktop = isDesktopMode()
 
 // 品牌展示数据
 const loginBgImage = computed(() => {
@@ -372,7 +381,11 @@ const adminForm = reactive({
 })
 
 const goHome = () => {
-  router.push('/')
+  router.push(isDesktop ? '/agent' : '/')
+}
+
+const goToConnectionConfig = () => {
+  router.push('/connect?from=login')
 }
 
 // 清理倒计时器
@@ -648,8 +661,9 @@ onMounted(async () => {
   // 检查是否是首次运行
   await checkFirstRunStatus()
 
-  // 检查 OIDC 配置
-  checkOIDCConfig()
+  if (!isDesktop) {
+    checkOIDCConfig()
+  }
 })
 
 // 组件卸载时清理定时器

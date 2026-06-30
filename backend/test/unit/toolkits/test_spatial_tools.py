@@ -43,6 +43,12 @@ def test_common_kb_tools_registers_spatial_tools() -> None:
     }.issubset(names)
 
 
+def test_spatial_tools_expose_runtime_as_injected_arg() -> None:
+    assert spatial_tools.list_spatial_layers._injected_args_keys == {"runtime"}
+    assert spatial_tools.query_spatial_features._injected_args_keys == {"runtime"}
+    assert spatial_tools.show_spatial_map._injected_args_keys == {"runtime"}
+
+
 @pytest.mark.asyncio
 async def test_list_spatial_layers_rejects_hidden_kb(monkeypatch) -> None:
     async def fail_repo():

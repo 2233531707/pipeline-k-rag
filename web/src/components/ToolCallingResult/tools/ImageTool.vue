@@ -14,6 +14,7 @@
 <script setup>
 import { computed } from 'vue'
 import BaseToolCall from '../BaseToolCall.vue'
+import { resolveRenderableAssetUrl } from '@/utils/desktopAssets'
 
 const props = defineProps({
   toolCall: {
@@ -40,8 +41,8 @@ const parsedContent = computed(() => {
 const imageUrl = computed(() => {
   const content = parsedContent.value
   // 图片类工具返回 URL 字符串时直接渲染图片
-  if (content && typeof content === 'string' && content.startsWith('http')) {
-    return content
+  if (content && typeof content === 'string') {
+    return resolveRenderableAssetUrl(content)
   }
   return null
 })

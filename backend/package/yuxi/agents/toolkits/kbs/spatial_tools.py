@@ -1,7 +1,5 @@
 """空间数据智能体工具。"""
 
-from __future__ import annotations
-
 from typing import Any
 
 from langgraph.prebuilt.tool_node import ToolRuntime

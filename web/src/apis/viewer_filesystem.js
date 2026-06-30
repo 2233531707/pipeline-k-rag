@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost } from './base'
+import { apiDelete, apiGet, apiPost, apiUrl } from './base'
 
 const buildQuery = (params) => {
   const query = new URLSearchParams()
@@ -23,13 +23,11 @@ export const getViewerFileSystemTree = (threadId, path = '/') => {
 }
 
 export const getViewerFileContent = (threadId, path) => {
-  const query = buildViewerQuery(threadId, path)
-  return apiGet(`/api/viewer/filesystem/file?${query}`)
+  return apiGet(getViewerFileContentUrl(threadId, path))
 }
 
 export const downloadViewerFile = (threadId, path) => {
-  const query = buildViewerQuery(threadId, path)
-  return apiGet(`/api/viewer/filesystem/download?${query}`, {}, true, 'blob')
+  return apiGet(getViewerFileDownloadUrl(threadId, path), {}, true, 'blob')
 }
 
 export const deleteViewerFile = (threadId, path) => {
@@ -51,4 +49,14 @@ export const uploadViewerFiles = (threadId, parentPath, files) => {
   formData.set('parent_path', parentPath)
   files.forEach((file) => formData.append('files', file))
   return apiPost('/api/viewer/filesystem/upload', formData)
+}
+
+export const getViewerFileContentUrl = (threadId, path) => {
+  const query = buildViewerQuery(threadId, path)
+  return apiUrl(`/api/viewer/filesystem/file?${query}`)
+}
+
+export const getViewerFileDownloadUrl = (threadId, path) => {
+  const query = buildViewerQuery(threadId, path)
+  return apiUrl(`/api/viewer/filesystem/download?${query}`)
 }

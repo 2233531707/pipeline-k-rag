@@ -94,4 +94,4 @@ Milvus 知识库的 chunks、唯一实体和三元组均可建立语义向量，
 
 ### 交付边界
 
-开发栈的 `web-dev` 使用 Vite 热重载。`yuxi-sync-isolated` 的 Web 是 Nginx，并只读挂载 `web/dist`；因此修改源码后必须先运行前端生产构建。Windows 启动器只是 Docker Compose 的桌面控制层，不能绕过 Compose 直接管理数据库或用户数据。
+开发栈的 `web-dev` 使用 Vite 热重载。`yuxi-sync-isolated` 的 Web 是 Nginx，并只读挂载 `web/dist`；因此修改源码后必须先运行前端生产构建。Windows 桌面交付方向是 Electron 前端客户端连接独立后端服务器；客户端不得托管 API、Worker、数据库、对象存储、向量库、图数据库或智能体沙盒。

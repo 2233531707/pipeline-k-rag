@@ -5,7 +5,9 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig(({ mode }) => {
   // eslint-disable-next-line no-undef
   const env = loadEnv(mode, process.cwd(), '')
+  const isDesktopBuild = (env.VITE_RUNTIME_TARGET || '').trim() === 'desktop' || mode === 'desktop'
   return {
+    base: isDesktopBuild ? './' : '/',
     plugins: [vue()],
     resolve: {
       alias: {

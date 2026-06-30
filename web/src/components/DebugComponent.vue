@@ -190,6 +190,7 @@ import {
 import dayjs from '@/utils/time'
 import { configApi } from '@/apis/system_api'
 import { checkSuperAdminPermission } from '@/stores/user'
+import { persistAuthToken, resolveApiUrl } from '@/runtime/desktop'
 
 const configStore = useConfigStore()
 const userStore = useUserStore()
@@ -539,7 +540,7 @@ const printAgentConfig = async () => {
 // 获取用户列表
 const fetchUsers = async () => {
   try {
-    const response = await fetch('/api/auth/users', {
+    const response = await fetch(resolveApiUrl('/api/auth/users'), {
       headers: userStore.getAuthHeaders()
     })
     if (!response.ok) {
@@ -572,7 +573,7 @@ const switchToUser = async (user) => {
     onOk: async () => {
       state.switchingUser = true
       try {
-        const response = await fetch(`/api/auth/impersonate/${user.id}`, {
+        const response = await fetch(resolveApiUrl(`/api/auth/impersonate/${user.id}`), {
           method: 'POST',
           headers: userStore.getAuthHeaders()
         })
@@ -582,7 +583,7 @@ const switchToUser = async (user) => {
         }
         const data = await response.json()
         // 设置新 token
-        localStorage.setItem('user_token', data.access_token)
+        await persistAuthToken(data.access_token)
         message.success(`已切换用户: ${user.username}`)
         state.showUserSwitcher = false
         // 刷新页面以重新初始化应用

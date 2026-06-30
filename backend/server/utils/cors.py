@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 LOCAL_WEB_CORS_ORIGINS = (
+    "kb-desktop://app",
     "http://localhost",
     "http://127.0.0.1",
     "http://localhost:5173",

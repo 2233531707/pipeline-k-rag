@@ -1,6 +1,27 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { brandApi } from '@/apis/system_api'
+import { resolveRemoteAssetUrl } from '@/runtime/desktop'
+
+function normalizeInfoConfigUrls(config) {
+  const nextConfig = {
+    ...(config || {}),
+    organization: { ...(config?.organization || {}) },
+    footer: { ...(config?.footer || {}) }
+  }
+
+  if (nextConfig.organization) {
+    nextConfig.organization.logo = resolveRemoteAssetUrl(nextConfig.organization.logo || '')
+    nextConfig.organization.login_bg = resolveRemoteAssetUrl(nextConfig.organization.login_bg || '')
+  }
+
+  if (nextConfig.footer) {
+    nextConfig.footer.user_agreement_url = resolveRemoteAssetUrl(nextConfig.footer.user_agreement_url || '')
+    nextConfig.footer.privacy_policy_url = resolveRemoteAssetUrl(nextConfig.footer.privacy_policy_url || '')
+  }
+
+  return nextConfig
+}
 
 export const useInfoStore = defineStore('info', () => {
   // 状态
@@ -40,7 +61,7 @@ export const useInfoStore = defineStore('info', () => {
 
   // 动作方法
   function setInfoConfig(newConfig) {
-    infoConfig.value = newConfig
+    infoConfig.value = normalizeInfoConfigUrls(newConfig)
     isLoaded.value = true
   }
 

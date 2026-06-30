@@ -109,7 +109,7 @@ backend/            FastAPI, LangGraph, knowledge services, workers, tests
 web/                Vue source and frontend tests
 docker/             Images, Nginx, sandbox provisioner, local data volumes
 docs/               User and developer documentation
-packaging/windows/  Windows launcher and installer sources
+packaging/windows/  Windows desktop frontend client packaging sources
 scripts/            Initialization and maintenance scripts
 ```
 

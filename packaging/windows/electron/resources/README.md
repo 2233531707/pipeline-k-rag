@@ -1,0 +1,1 @@
+Electron build resources directory.

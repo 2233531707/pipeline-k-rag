@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
 from abc import abstractmethod
 from contextlib import suppress
 from pathlib import Path
@@ -108,6 +109,35 @@ async def _collect_subagent_routes(run, parent_thread_id: str, routes: dict[tupl
         raise
     except Exception as exc:
         logger.debug(f"collect subagent stream routes failed: {exc}")
+
+
+def _checkpoint_sidecar_paths(db_path: Path) -> list[Path]:
+    return [db_path, db_path.with_name(f"{db_path.name}-wal"), db_path.with_name(f"{db_path.name}-shm")]
+
+
+def _quarantine_checkpoint_file(path: Path) -> Path | None:
+    if not path.exists():
+        return None
+    target = path.with_name(f"{path.name}.corrupt-{int(path.stat().st_mtime_ns)}")
+    path.replace(target)
+    return target
+
+
+def _ensure_sqlite_checkpoint_healthy(db_path: Path) -> None:
+    if not db_path.exists():
+        return
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute("PRAGMA integrity_check;").fetchone()
+    except sqlite3.DatabaseError as exc:
+        row = (str(exc),)
+
+    if row == ("ok",):
+        return
+
+    quarantined = [item for item in (_quarantine_checkpoint_file(path) for path in _checkpoint_sidecar_paths(db_path)) if item]
+    logger.warning(f"检测到损坏的 LangGraph checkpoint sqlite，已隔离重建: {db_path} -> {quarantined}")
 
 
 class BaseAgent:
@@ -412,7 +442,10 @@ class BaseAgent:
         if self._async_conn is not None:
             return self._async_conn
 
-        conn = await aiosqlite.connect(os.path.join(self.workdir, "aio_history.db"))
+        db_path = self.workdir / "aio_history.db"
+        _ensure_sqlite_checkpoint_healthy(db_path)
+
+        conn = await aiosqlite.connect(os.fspath(db_path))
         # Patch: langgraph's AsyncSqliteSaver expects is_alive() method which aiosqlite may not have
         if not hasattr(conn, "is_alive"):
             conn.is_alive = lambda: True

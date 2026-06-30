@@ -1,11 +1,8 @@
 .build-venv/
-.pyinstaller/
-.inno/
 .cache/
+.nsis/
 build/
 dist/
-bundle/app/
-bundle/*.zip
-bundle/images/*.tar
-!bundle/images/.gitkeep
 __pycache__/
+electron/node_modules/
+electron/pnpm-lock.yaml

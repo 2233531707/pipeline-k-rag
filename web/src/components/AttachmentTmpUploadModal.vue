@@ -162,6 +162,20 @@ import { ChevronDown, ChevronUp, X } from 'lucide-vue-next'
 import { threadApi } from '@/apis'
 import { ocrApi } from '@/apis/system_api'
 import FileTypeIcon from '@/components/common/FileTypeIcon.vue'
+import {
+  clearParsedAttachmentState,
+  getDefaultParseMethod,
+  isTmpAttachmentParseDisabled,
+  patchTmpAttachmentParseMethodChange,
+  resetTmpAttachmentOcrHealthStatus,
+  shouldApplyTmpAttachmentModalSessionResult,
+  shouldApplyTmpAttachmentOcrHealthResult,
+  resolveTmpAttachmentSelectedParseMethod
+} from '@/utils/tmpAttachmentParseState'
+import {
+  buildConfirmableTmpAttachments,
+  buildTmpAttachmentConfirmPayload
+} from '@/utils/tmpAttachmentConfirm'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -173,7 +187,10 @@ const emit = defineEmits(['update:open', 'added'])
 
 const fileItems = ref([])
 const confirming = ref(false)
+const modalOpen = computed(() => props.open)
 let localIdSeed = 0
+let modalSessionSeq = 0
+let ocrHealthRequestSeq = 0
 
 const methodLabels = {
   disable: 'PDF 文本提取',
@@ -192,8 +209,7 @@ const ocrMethodKeys = [
   'deepseek_ocr'
 ]
 
-const defaultOcrHealthStatus = () =>
-  Object.fromEntries(ocrMethodKeys.map((method) => [method, { status: 'unknown', message: '' }]))
+const defaultOcrHealthStatus = () => resetTmpAttachmentOcrHealthStatus(ocrMethodKeys)
 
 const ocrHealthStatus = ref(defaultOcrHealthStatus())
 const ocrHealthChecking = ref(false)
@@ -212,9 +228,7 @@ const methodStatusLabels = {
 const busy = computed(() =>
   fileItems.value.some((item) => ['uploading', 'parsing'].includes(item.status))
 )
-const confirmableItems = computed(() =>
-  fileItems.value.filter((item) => ['uploaded', 'parsed'].includes(item.status))
-)
+const confirmableItems = computed(() => buildConfirmableTmpAttachments(fileItems.value))
 const confirmDisabled = computed(() => busy.value || confirmableItems.value.length === 0)
 
 watch(
@@ -223,6 +237,10 @@ watch(
     if (!open) {
       fileItems.value = []
       confirming.value = false
+      ocrHealthStatus.value = defaultOcrHealthStatus()
+      ocrHealthChecking.value = false
+      modalSessionSeq += 1
+      ocrHealthRequestSeq += 1
     }
   }
 )
@@ -230,8 +248,6 @@ watch(
 const getErrorMessage = (error, fallback = '操作失败') => {
   return error?.response?.data?.detail || error?.message || fallback
 }
-
-const getDefaultParseMethod = () => null
 
 const normalizeTmpUpload = (response) => ({
   tmpFileId: response.tmp_file_id,
@@ -253,25 +269,68 @@ const updateItem = (localId, patch) => {
   )
 }
 
+const syncItemSelectedParseMethod = (item) => {
+  if (!item?.parseSupported) return item
+
+  const selectedParseMethod = resolveTmpAttachmentSelectedParseMethod({
+    parseMethods: item.parseMethods || [],
+    selectedParseMethod: item.selectedParseMethod,
+    isUnavailableMethod: isUnavailableParseMethod
+  })
+
+  return selectedParseMethod === item.selectedParseMethod ? item : { ...item, selectedParseMethod }
+}
+
+const syncAllSelectedParseMethods = () => {
+  fileItems.value = fileItems.value.map((item) => syncItemSelectedParseMethod(item))
+}
+
+const isCurrentModalSession = (requestSeq) =>
+  shouldApplyTmpAttachmentModalSessionResult({
+    open: modalOpen.value,
+    requestSeq,
+    activeRequestSeq: modalSessionSeq
+  })
+
 const checkOcrHealth = async () => {
   if (ocrHealthChecking.value) return
 
+  const requestSeq = ++ocrHealthRequestSeq
   ocrHealthChecking.value = true
   try {
     const healthData = await ocrApi.getHealth()
+    if (
+      !shouldApplyTmpAttachmentOcrHealthResult({
+        open: modalOpen.value,
+        requestSeq,
+        activeRequestSeq: ocrHealthRequestSeq
+      })
+    ) {
+      return
+    }
     ocrHealthStatus.value = {
       ...defaultOcrHealthStatus(),
       ...(healthData?.services || {})
     }
+    syncAllSelectedParseMethods()
   } catch (error) {
     console.error('OCR健康检查失败:', error)
   } finally {
-    ocrHealthChecking.value = false
+    if (
+      shouldApplyTmpAttachmentOcrHealthResult({
+        open: modalOpen.value,
+        requestSeq,
+        activeRequestSeq: ocrHealthRequestSeq
+      })
+    ) {
+      ocrHealthChecking.value = false
+    }
   }
 }
 
 const uploadFile = async (file) => {
   const localId = `${Date.now()}-${localIdSeed++}`
+  const sessionSeq = modalSessionSeq
   const item = {
     localId,
     fileName: file.name,
@@ -286,12 +345,14 @@ const uploadFile = async (file) => {
 
   try {
     const response = await threadApi.uploadTmpAttachment(file)
+    if (!isCurrentModalSession(sessionSeq)) return
     const normalized = normalizeTmpUpload(response)
-    updateItem(localId, { ...normalized, status: 'uploaded' })
+    updateItem(localId, syncItemSelectedParseMethod({ ...normalized, status: 'uploaded' }))
     if (normalized.parseSupported) {
       void checkOcrHealth()
     }
   } catch (error) {
+    if (!isCurrentModalSession(sessionSeq)) return
     updateItem(localId, {
       status: 'error',
       error: getErrorMessage(error, '上传失败')
@@ -342,26 +403,15 @@ const getUnavailableParseMethods = (item) =>
   (item.parseMethods || []).filter((method) => isUnavailableParseMethod(method))
 
 const isParseDisabled = (item) =>
-  item.status === 'parsing' ||
-  !item.selectedParseMethod ||
-  confirming.value ||
-  isUnavailableParseMethod(item.selectedParseMethod)
-
-const clearParsedState = {
-  parsedObjectName: null,
-  parsedMinioUrl: null,
-  truncated: false,
-  parseMethod: null
-}
+  isTmpAttachmentParseDisabled({
+    item,
+    confirming: confirming.value,
+    isUnavailableMethod: isUnavailableParseMethod
+  })
 
 const handleParseMethodChange = (localId, selectedParseMethod) => {
   const item = fileItems.value.find((entry) => entry.localId === localId)
-  updateItem(localId, {
-    ...clearParsedState,
-    selectedParseMethod,
-    parseError: null,
-    status: item?.status === 'parsed' ? 'uploaded' : item?.status
-  })
+  updateItem(localId, patchTmpAttachmentParseMethodChange(item, selectedParseMethod))
 }
 
 const handleStartParse = (localId) => {
@@ -373,9 +423,10 @@ const handleStartParse = (localId) => {
 
 const handleParse = async (item) => {
   if (!item.objectName || !item.selectedParseMethod) return
+  const sessionSeq = modalSessionSeq
 
   updateItem(item.localId, {
-    ...clearParsedState,
+    ...clearParsedAttachmentState,
     status: 'parsing',
     parseError: null
   })
@@ -386,6 +437,7 @@ const handleParse = async (item) => {
       bucket_name: item.bucketName,
       parse_method: item.selectedParseMethod
     })
+    if (!isCurrentModalSession(sessionSeq)) return
     updateItem(item.localId, {
       status: 'parsed',
       parsedObjectName: response.parsed_object_name,
@@ -395,8 +447,9 @@ const handleParse = async (item) => {
     })
     message.success('附件解析完成')
   } catch (error) {
+    if (!isCurrentModalSession(sessionSeq)) return
     updateItem(item.localId, {
-      ...clearParsedState,
+      ...clearParsedAttachmentState,
       status: 'uploaded',
       parseError: getErrorMessage(error, '解析失败')
     })
@@ -422,31 +475,30 @@ const handleParsePanelOpenChange = (localId, open) => {
 const handleConfirm = async () => {
   if (confirmDisabled.value) return
 
-  const attachments = confirmableItems.value.map((item) => ({
-    file_name: item.fileName,
-    file_type: item.fileType,
-    bucket_name: item.bucketName,
-    object_name: item.objectName,
-    parsed_object_name: item.parsedObjectName || null,
-    truncated: Boolean(item.truncated)
-  }))
+  const attachments = buildTmpAttachmentConfirmPayload(fileItems.value)
+  const sessionSeq = modalSessionSeq
 
   confirming.value = true
   try {
     const threadId = props.threadId || (props.ensureThread ? await props.ensureThread() : '')
+    if (!isCurrentModalSession(sessionSeq)) return
     if (!threadId) {
       message.error('创建对话失败，无法添加附件')
       return
     }
 
     const response = await threadApi.confirmTmpThreadAttachments(threadId, attachments)
+    if (!isCurrentModalSession(sessionSeq)) return
     message.success('附件已添加')
     emit('added', response)
     emit('update:open', false)
   } catch (error) {
+    if (!isCurrentModalSession(sessionSeq)) return
     message.error(getErrorMessage(error, '添加附件失败'))
   } finally {
-    confirming.value = false
+    if (isCurrentModalSession(sessionSeq)) {
+      confirming.value = false
+    }
   }
 }
 

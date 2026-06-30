@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPut } from './base'
+import { apiDelete, apiGet, apiPost, apiPut, apiUrl } from './base'
 
 const buildQuery = (params) => {
   const query = new URLSearchParams()
@@ -31,13 +31,11 @@ export const getWorkspaceKnowledgeTree = (
 }
 
 export const getWorkspaceKnowledgeFileContent = (kbId, fileId, variant = 'parsed') => {
-  const query = buildQuery({ kb_id: kbId, file_id: fileId, variant })
-  return apiGet(`/api/workspace/knowledge/file?${query}`)
+  return apiGet(getWorkspaceKnowledgeFileContentUrl(kbId, fileId, variant))
 }
 
 export const downloadWorkspaceKnowledgeFile = (kbId, fileId, variant = 'original') => {
-  const query = buildQuery({ kb_id: kbId, file_id: fileId, variant })
-  return apiGet(`/api/workspace/knowledge/download?${query}`, {}, true, 'blob')
+  return apiGet(getWorkspaceKnowledgeDownloadUrl(kbId, fileId, variant), {}, true, 'blob')
 }
 
 export const saveWorkspaceFileContent = (path, content) => {
@@ -64,6 +62,20 @@ export const uploadWorkspaceFiles = (parentPath, files) => {
 }
 
 export const downloadWorkspaceFile = (path) => {
+  return apiGet(getWorkspaceDownloadUrl(path), {}, true, 'blob')
+}
+
+export const getWorkspaceKnowledgeFileContentUrl = (kbId, fileId, variant = 'parsed') => {
+  const query = buildQuery({ kb_id: kbId, file_id: fileId, variant })
+  return apiUrl(`/api/workspace/knowledge/file?${query}`)
+}
+
+export const getWorkspaceKnowledgeDownloadUrl = (kbId, fileId, variant = 'original') => {
+  const query = buildQuery({ kb_id: kbId, file_id: fileId, variant })
+  return apiUrl(`/api/workspace/knowledge/download?${query}`)
+}
+
+export const getWorkspaceDownloadUrl = (path) => {
   const query = buildQuery({ path })
-  return apiGet(`/api/workspace/download?${query}`, {}, true, 'blob')
+  return apiUrl(`/api/workspace/download?${query}`)
 }

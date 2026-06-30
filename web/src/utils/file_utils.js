@@ -1,5 +1,6 @@
 import { getPreviewFileExtension, getPreviewTypeByPath } from '@/utils/file_preview'
 import { formatRelative, parseToShanghai } from '@/utils/time'
+import { resolvePreviewAssetUrl } from '@/utils/desktopAssets'
 
 export const formatRelativeTime = (value) => formatRelative(value)
 
@@ -61,7 +62,9 @@ export const normalizeAttachmentPreview = (attachment) => {
     raw: attachment,
     fileId,
     name,
-    previewUrl: attachment?.original_artifact_url || attachment?.artifact_url || '',
+    previewUrl: resolvePreviewAssetUrl(
+      attachment?.original_artifact_url || attachment?.artifact_url || ''
+    ),
     isImage: fileType.startsWith('image/') || getPreviewTypeByPath(name) === 'image',
     meta: [typeLabel, sizeLabel === '-' ? '' : sizeLabel].filter(Boolean).join(' · ')
   }

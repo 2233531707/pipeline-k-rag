@@ -1,0 +1,44 @@
+{
+  "name": "yuxi-desktop-electron",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build:web": "npx -y pnpm@10.11.0 --dir ../../../web build --mode desktop",
+    "dev:web": "npx -y pnpm@10.11.0 --dir ../../../web dev --mode desktop",
+    "dev": "electron .",
+    "dist:portable": "pnpm run build:web && electron-builder --win portable"
+  },
+  "dependencies": {
+    "electron-store": "^10.1.0"
+  },
+  "devDependencies": {
+    "@electron/get": "3.1.0",
+    "electron": "^37.2.0",
+    "electron-builder": "26.15.5"
+  },
+  "build": {
+    "appId": "com.yuxi.desktop",
+    "productName": "地下管网知识模型数据库",
+    "directories": {
+      "output": "../dist/electron",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../../../web/dist",
+        "to": "web-dist"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  }
+}

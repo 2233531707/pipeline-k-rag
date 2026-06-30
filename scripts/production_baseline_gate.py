@@ -50,10 +50,7 @@ BACKEND_RUFF_TARGETS = [
     *BACKEND_PYTEST_TARGETS,
 ]
 
-HOST_UNITTEST_TARGETS = [
-    "packaging/windows/tests/test_security_policy.py",
-    "packaging/windows/tests/test_production_baseline_gate.py",
-]
+HOST_UNITTEST_TARGETS: list[str] = []
 
 
 def resolve_runner(runner: str) -> str:

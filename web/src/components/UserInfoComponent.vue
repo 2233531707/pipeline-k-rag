@@ -43,6 +43,10 @@
               themeStore.isDark ? '切换到浅色模式' : '切换到深色模式 (Beta)'
             }}</span>
           </a-menu-item>
+          <a-menu-item v-if="isDesktop" key="connect" @click="goToConnectionConfig">
+            <template #icon><Server :size="16" /></template>
+            <span class="menu-text">切换服务器</span>
+          </a-menu-item>
           <a-menu-divider v-if="userStore.isAdmin" />
           <a-menu-item v-if="userStore.isSuperAdmin" key="debug" @click="showDebug = true">
             <template #icon><Terminal :size="16" /></template>
@@ -72,14 +76,16 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import DebugComponent from '@/components/DebugComponent.vue'
 import { message } from 'ant-design-vue'
-import { CircleUser, BookOpen, Sun, Moon, LogOut, Settings, Terminal } from 'lucide-vue-next'
+import { CircleUser, BookOpen, Sun, Moon, LogOut, Settings, Terminal, Server } from 'lucide-vue-next'
 import { useThemeStore } from '@/stores/theme'
 import { generatePixelAvatar } from '@/utils/pixelAvatar'
+import { isDesktopMode } from '@/runtime/desktop'
 
 const router = useRouter()
 const userStore = useUserStore()
 const themeStore = useThemeStore()
 const slots = useSlots()
+const isDesktop = isDesktopMode()
 
 // 调试面板状态
 const showDebug = ref(false)
@@ -148,6 +154,10 @@ const goToLogin = () => {
 
 const toggleTheme = () => {
   themeStore.toggleTheme()
+}
+
+const goToConnectionConfig = () => {
+  router.push('/connect?from=app')
 }
 
 // 前往设置页

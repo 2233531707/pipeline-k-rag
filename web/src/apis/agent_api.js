@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiDelete, apiPut, apiRequest } from './base'
+import { apiGet, apiPost, apiDelete, apiPut, apiRequest, apiUrl } from './base'
 import { useUserStore } from '@/stores/user'
 
 /**
@@ -149,7 +149,7 @@ export const agentApi = {
       headers['Last-Event-ID'] = cursor
     }
     const params = new URLSearchParams({ verbose: String(verbose) })
-    return fetch(`/api/agent/runs/${runId}/events?${params.toString()}`, {
+    return fetch(apiUrl(`/api/agent/runs/${runId}/events?${params.toString()}`), {
       method: 'GET',
       headers,
       signal
@@ -286,7 +286,7 @@ export const threadApi = {
       .map((segment) => encodeURIComponent(segment))
       .join('/')
     const query = download ? '?download=true' : ''
-    return `/api/chat/thread/${threadId}/artifacts/${encodedPath}${query}`
+    return apiUrl(`/api/chat/thread/${threadId}/artifacts/${encodedPath}${query}`)
   },
 
   /**

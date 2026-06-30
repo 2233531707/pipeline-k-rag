@@ -1,11 +1,15 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 import BlankLayout from '@/layouts/BlankLayout.vue'
 import { useUserStore } from '@/stores/user'
 import { useAgentStore } from '@/stores/agent'
+import { hasConfiguredBackendUrl, isDesktopMode } from '@/runtime/desktop'
+import { resolveDesktopRouteRedirect } from '@/utils/desktopRouteRedirect'
+
+const desktopMode = isDesktopMode()
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: desktopMode ? createWebHashHistory() : createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
@@ -16,9 +20,15 @@ const router = createRouter({
           path: '',
           name: 'Home',
           component: () => import('../views/HomeView.vue'),
-          meta: { keepAlive: true, requiresAuth: false }
+          meta: { keepAlive: true, requiresAuth: false, webOnly: true }
         }
       ]
+    },
+    {
+      path: '/connect',
+      name: 'desktop-connect',
+      component: () => import('@/views/DesktopConnectionView.vue'),
+      meta: { requiresAuth: false, public: true, desktopOnly: true }
     },
     {
       path: '/login',
@@ -30,7 +40,7 @@ const router = createRouter({
       path: '/auth/oidc/callback', // oidc登录回调页面
       name: 'OIDCCallback',
       component: () => import('@/views/OIDCCallbackView.vue'),
-      meta: { public: true }
+      meta: { public: true, webOnly: true }
     },
     {
       path: '/agent',
@@ -170,6 +180,18 @@ router.beforeEach(async (to) => {
   const isAdmin = userStore.isAdmin
   const isSuperAdmin = userStore.isSuperAdmin
 
+  if (desktopMode) {
+    const desktopRedirect = resolveDesktopRouteRedirect({
+      toPath: to.path,
+      isWebOnly: Boolean(to.meta?.webOnly),
+      isLoggedIn,
+      hasConfiguredBackendUrl: hasConfiguredBackendUrl()
+    })
+    if (desktopRedirect) {
+      return desktopRedirect
+    }
+  }
+
   // 如果路由需要认证但用户未登录
   if (requiresAuth && !isLoggedIn) {
     // 保存尝试访问的路径，登录后跳转
@@ -205,11 +227,6 @@ router.beforeEach(async (to) => {
       console.error('获取智能体信息失败:', error)
       return '/agent'
     }
-  }
-
-  // 如果用户已登录但访问登录页
-  if (to.path === '/login' && isLoggedIn) {
-    return '/'
   }
 
   // 其他情况正常导航

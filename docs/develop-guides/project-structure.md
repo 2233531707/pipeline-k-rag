@@ -10,7 +10,7 @@ pipeline-k-rag/
 ├── web/                     Vue 3 前端源码、静态资源和前端测试
 ├── docker/                  Dockerfile、Nginx、沙盒 provisioner 与本地运行卷
 ├── docs/                    VitePress 用户文档、开发指南和任务报告
-├── packaging/windows/       Windows 启动器、离线 bundle 与 Inno Setup 源码
+├── packaging/windows/       Windows 桌面前端客户端打包源码与历史废弃资产
 ├── scripts/                 初始化、镜像拉取、数据卷检查和版本脚本
 ├── docker-compose.yml       开发与调试环境
 ├── docker-compose.prod.yml  生产构建环境
@@ -74,11 +74,13 @@ web/
 - `.env`、`.env.prod`、测试账号配置和任何密钥文件；
 - `docker/volumes/`、Compose 数据卷、`backend/saves*`、数据库文件和用户上传内容；
 - `web/node_modules/`、`web/dist/`；
-- `packaging/windows/{.cache,.inno,.pyinstaller,build,dist}`；
+- `packaging/windows/{.cache,.nsis,build,dist}`；
 - `.yuxikb.zip` 迁移包、Docker 镜像归档、日志和缓存；
 - `.claude/`、`.codex/`、IDE 配置和个人工作记录。
 
-可提交的是源码、锁文件、模板、Compose 文件、Dockerfile、测试、正式文档和 Windows 打包源码。
+可提交的是源码、锁文件、模板、Compose 文件、Dockerfile、测试、正式文档和 Windows 桌面客户端打包源码。
+
+当前首版桌面客户端工程放在 `packaging/windows/electron/`，Windows 构建脚本放在 `packaging/windows/scripts/build_electron_portable.ps1`。被废弃的本地单机版交付遗留已经从 `packaging/windows/` 清理，不应再按该方向恢复目录、脚本或测试。
 
 ## 变更边界
 

@@ -4,13 +4,14 @@ import { useAgentStore } from '@/stores/agent'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 import { onMounted } from 'vue'
+import { hasConfiguredBackendUrl, isDesktopMode } from '@/runtime/desktop'
 
 const agentStore = useAgentStore()
 const userStore = useUserStore()
 const themeStore = useThemeStore()
 
 onMounted(async () => {
-  if (userStore.isLoggedIn) {
+  if (userStore.isLoggedIn && (!isDesktopMode() || hasConfiguredBackendUrl())) {
     await agentStore.initialize()
   }
 })

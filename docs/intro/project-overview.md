@@ -8,7 +8,7 @@
 - **运行统一**：RAG、图谱和地图不是独立展示页，而是可被 LangGraph 智能体显式调用的工具。
 - **数据可迁移**：`.yuxikb.zip` 在实例间迁移文档、chunks、图谱和配置，导入后重建索引。
 - **多用户可治理**：部门、用户、知识库和智能体资源有明确的后端权限边界。
-- **Docker 优先**：开发、测试、生产和 Windows 启动器都以 Docker Compose 为运行事实来源。
+- **部署边界清晰**：开发、测试和后端生产部署以 Docker Compose 为运行事实来源；Windows 桌面客户端只承载前端界面并连接独立后端服务器。
 
 ## 技术架构
 
@@ -22,7 +22,7 @@
 | 空间与业务数据 | PostgreSQL + PostGIS | 用户、权限、任务、chunks、图层和几何对象 |
 | 对象存储 | MinIO | 原始文档、空间源文件和对象 |
 | 队列与事件 | Redis、Worker | 异步任务、运行事件和取消信号 |
-| 交付 | Docker Compose、Nginx、Windows Installer | 开发、生产与桌面启动 |
+| 交付 | Docker Compose、Nginx、Electron 桌面客户端 | 开发、生产与桌面前端入口 |
 
 ## 核心链路
 

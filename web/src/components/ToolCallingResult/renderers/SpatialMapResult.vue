@@ -123,6 +123,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AlertCircle, ChevronDown, ChevronUp, Loader2, Map, X } from 'lucide-vue-next'
 import BaseToolCall from '../BaseToolCall.vue'
+import { resolvePreviewAssetUrl } from '@/utils/desktopAssets'
 
 const props = defineProps({
   toolCall: {
@@ -307,7 +308,9 @@ const initMap = async () => {
     const config = mapConfig.value
     mapInstance = new maplibreApi.Map({
       container: mapContainerRef.value,
-      style: config.map_style || 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      style: resolvePreviewAssetUrl(
+        config.map_style || 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
+      ),
       center: config.center || [0, 0],
       zoom: config.zoom || 12
     })

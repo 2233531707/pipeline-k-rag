@@ -22,7 +22,7 @@
 | Web | Vue 3、Vite、Pinia、Ant Design Vue、MapLibre GL JS |
 | API / Agent | FastAPI、LangGraph v1、ARQ Worker |
 | 数据 | PostgreSQL + PostGIS、Redis、MinIO、Milvus、Neo4j |
-| 交付 | Docker Compose、Nginx、Windows 启动器与 Inno Setup |
+| 交付 | Docker Compose、Nginx、Electron 桌面前端客户端 |
 
 ## 部署前准备
 
@@ -229,7 +229,7 @@ backend/            后端业务包、FastAPI 服务、Worker 和测试
 web/                Vue 前端源码；dist 为本地构建产物
 docker/             镜像、Nginx、沙盒和本地数据卷
 docs/               用户文档、开发指南和任务报告
-packaging/windows/  Windows 启动器和安装包源码
+packaging/windows/  Windows 桌面前端客户端打包源码
 scripts/            初始化、镜像和维护脚本
 ```
 
@@ -291,7 +291,7 @@ docker logs graph --tail 100
 - [Main2 能力](docs/features/main2-capabilities.md)
 - [知识库迁移格式](docs/features/knowledge-base-portable-package.md)
 - [生产部署](docs/advanced/deployment.md)
-- [Windows 打包](docs/advanced/windows-package.md)
+- [Windows 桌面客户端](docs/advanced/windows-package.md)
 - [测试规范](docs/develop-guides/testing-guidelines.md)
 - [版本记录](docs/develop-guides/changelog.md)
 

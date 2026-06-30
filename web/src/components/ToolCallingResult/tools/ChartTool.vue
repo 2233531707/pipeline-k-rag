@@ -11,6 +11,7 @@
 <script setup>
 import { computed } from 'vue'
 import BaseToolCall from '../BaseToolCall.vue'
+import { resolveRenderableAssetUrl } from '@/utils/desktopAssets'
 
 const props = defineProps({
   toolCall: {
@@ -38,7 +39,7 @@ const chartUrl = computed(() => {
   const content = parsedContent.value
   // chart 返回数组格式 [{ type: "text", text: "url", id: "..." }]
   if (Array.isArray(content) && content.length > 0 && content[0].type === 'text') {
-    return content[0].text
+    return resolveRenderableAssetUrl(content[0].text)
   }
   return null
 })

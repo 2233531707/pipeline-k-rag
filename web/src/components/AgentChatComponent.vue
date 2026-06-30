@@ -465,6 +465,11 @@ import {
 import { message } from 'ant-design-vue'
 import { ChevronDown, RefreshCw, SquareCheck } from 'lucide-vue-next'
 import { formatFileSize } from '@/utils/file_utils'
+import {
+  buildPendingAttachmentRequest,
+  markThreadAttachmentsRequestId
+} from '@/utils/threadAttachments'
+import { clearDesktopSubagentThreadModalState } from '@/utils/desktopChatState'
 import FileTypeIcon from '@/components/common/FileTypeIcon.vue'
 import { generatePixelAvatar } from '@/utils/pixelAvatar'
 import {
@@ -503,6 +508,7 @@ import SubagentThreadModal from '@/components/SubagentThreadModal.vue'
 import { enrichTaskToolCalls, parseToolCallArgs } from '@/components/ToolCallingResult/toolRegistry'
 import { getConversationDisplayItems } from '@/utils/messageGrouping'
 import { makeChildThreadId } from '@/utils/subagentThread'
+import { onDesktopBackendChanged } from '@/runtime/desktop'
 
 // ==================== PROPS & EMITS ====================
 const props = defineProps({
@@ -609,6 +615,7 @@ let resizeStartX = 0
 let resizeStartWidth = 0
 let panelContainerWidth = 0
 let streamingStateRefreshTimer = null
+let stopDesktopBackendChangedListener = null
 
 const formatTodoName = (content) => {
   return Array.from(String(content || ''))
@@ -1356,9 +1363,10 @@ const insertOptimisticHumanMessage = (
 const markAttachmentsRequestId = (threadId, attachments, requestId) => {
   if (!threadId || !attachments.length) return null
   const previousAttachments = threadAttachmentsMap.value[threadId] || []
-  const fileIds = new Set(attachments.map((attachment) => attachment.file_id).filter(Boolean))
-  threadAttachmentsMap.value[threadId] = previousAttachments.map((attachment) =>
-    fileIds.has(attachment.file_id) ? { ...attachment, request_id: requestId } : attachment
+  threadAttachmentsMap.value[threadId] = markThreadAttachmentsRequestId(
+    previousAttachments,
+    attachments,
+    requestId
   )
   return previousAttachments
 }
@@ -1562,6 +1570,8 @@ const startChatMainResizeObserver = () => {
 }
 
 onMounted(() => {
+  stopDesktopBackendChangedListener = onDesktopBackendChanged(clearDesktopBackendBoundChatState)
+
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handlePageVisibilityChange)
   }
@@ -1588,6 +1598,10 @@ onDeactivated(() => {
 })
 
 onUnmounted(() => {
+  if (stopDesktopBackendChangedListener) {
+    stopDesktopBackendChangedListener()
+    stopDesktopBackendChangedListener = null
+  }
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', handlePageVisibilityChange)
   }
@@ -1819,6 +1833,36 @@ const { startRunStream, resumeActiveRunForThread, stopRunStreamSubscription } = 
   }
 })
 
+const clearDesktopBackendBoundChatState = () => {
+  Object.keys(chatState.threadStates).forEach((threadId) => {
+    stopThreadStream(threadId)
+    stopRunStreamSubscription(threadId)
+  })
+  stopStreamingStateRefresh()
+  resetOnGoingConv()
+  hideApprovalState()
+
+  userInput.value = ''
+  attachmentUploadModalOpen.value = false
+  setCurrentThreadId(null)
+  threads.value = []
+  threadMessages.value = {}
+  threadFilesMap.value = {}
+  threadAttachmentsMap.value = {}
+  threadConfigNoticeMap.value = {}
+  threadPendingConfigNoticeMap.value = {}
+  threadConfigSnapshotMap.value = {}
+  chatState.subagentThreadByToolCall = {}
+  clearDesktopSubagentThreadModalState(subagentThreadModal)
+  resetAgentPanelState()
+
+  if (sendCooldownTimer) {
+    clearTimeout(sendCooldownTimer)
+    sendCooldownTimer = null
+  }
+  sendCooldownActive.value = false
+}
+
 const resumeCurrentRunForVisiblePage = async () => {
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
   const threadId = currentChatId.value
@@ -1986,10 +2030,9 @@ const handleSendMessage = async ({ image } = {}) => {
     hideApprovalState()
   }
 
-  const pendingAttachments = [...currentPendingThreadAttachments.value]
-  const pendingAttachmentFileIds = pendingAttachments
-    .map((attachment) => attachment.file_id)
-    .filter(Boolean)
+  const pendingAttachmentRequest = buildPendingAttachmentRequest(currentPendingThreadAttachments.value)
+  const pendingAttachments = pendingAttachmentRequest.attachments
+  const pendingAttachmentFileIds = pendingAttachmentRequest.fileIds
 
   if ((threadMessages.value[threadId] || []).length === 0) {
     const autoTitle = text.replace(/\s+/g, ' ').trim().slice(0, 2000)
