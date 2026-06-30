@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, provide, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, provide, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   BarChart3,
@@ -27,6 +27,10 @@ import DebugComponent from '@/components/DebugComponent.vue'
 import TaskCenterDrawer from '@/components/TaskCenterDrawer.vue'
 import SettingsModal from '@/components/SettingsModal.vue'
 import ConversationNavSection from '@/components/ConversationNavSection.vue'
+import {
+  isNavItemActive as isRouteNavItemActive,
+  resolveRouterLinkActiveClass
+} from '@/utils/sidebarNav'
 
 const configStore = useConfigStore()
 const agentStore = useAgentStore()
@@ -47,7 +51,9 @@ const showDebugModal = ref(false)
 const showSettingsModal = ref(false)
 const settingsInitialTab = ref('')
 
-const { sidebarCollapsed } = storeToRefs(chatUIStore)
+const { sidebarCollapsed, sidebarWidth } = storeToRefs(chatUIStore)
+const isResizingSidebar = ref(false)
+const sidebarResizeStep = 16
 
 // Provide settings modal methods to child components
 const openSettingsModal = (tab) => {
@@ -77,7 +83,55 @@ const getRemoteDatabase = async () => {
   }
 }
 
+const getViewportWidth = () => (typeof window === 'undefined' ? undefined : window.innerWidth)
+
+const syncSidebarWidthToViewport = () => {
+  chatUIStore.setSidebarWidth(sidebarWidth.value, getViewportWidth())
+}
+
+const applySidebarWidth = (width) => {
+  chatUIStore.setSidebarWidth(width, getViewportWidth())
+}
+
+const handleSidebarResizeMove = (event) => {
+  if (!isResizingSidebar.value) return
+  applySidebarWidth(event.clientX)
+}
+
+const stopSidebarResize = () => {
+  if (!isResizingSidebar.value) return
+  isResizingSidebar.value = false
+  window.removeEventListener('pointermove', handleSidebarResizeMove)
+  window.removeEventListener('pointerup', stopSidebarResize)
+  window.removeEventListener('pointercancel', stopSidebarResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+const startSidebarResize = (event) => {
+  if (sidebarCollapsed.value) return
+  event.preventDefault()
+  isResizingSidebar.value = true
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', handleSidebarResizeMove)
+  window.addEventListener('pointerup', stopSidebarResize)
+  window.addEventListener('pointercancel', stopSidebarResize)
+  applySidebarWidth(event.clientX)
+}
+
+const nudgeSidebarWidth = (delta) => {
+  applySidebarWidth(sidebarWidth.value + delta)
+}
+
+const resetSidebarWidth = () => {
+  chatUIStore.resetSidebarWidth()
+  syncSidebarWidthToViewport()
+}
+
 onMounted(async () => {
+  syncSidebarWidthToViewport()
+  window.addEventListener('resize', syncSidebarWidthToViewport)
   // 加载信息配置与知识库数据无依赖，可并行
   await Promise.all([infoStore.loadInfoConfig(), getRemoteDatabase()])
   await initAgentNavigation()
@@ -88,10 +142,18 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncSidebarWidthToViewport)
+  stopSidebarResize()
+})
+
 const route = useRoute()
 const router = useRouter()
 
 const activeTaskCount = computed(() => activeCountRef.value || 0)
+const layoutStyle = computed(() => ({
+  '--sidebar-width': `${sidebarWidth.value}px`
+}))
 const organizationName = computed(() => {
   return infoStore.organization.name || infoStore.branding.name || '地下管网知识模型数据库'
 })
@@ -152,15 +214,7 @@ const mainList = computed(() => {
   return items
 })
 
-const isNavItemActive = (item) => {
-  const activePaths = item.activePaths || [item.path.split('?')[0]]
-  const pathActive = activePaths.some(
-    (path) => route.path === path || route.path.startsWith(path + '/')
-  )
-  if (!pathActive || !item.activeTabs) return pathActive
-  const activeTab = typeof route.query.tab === 'string' ? route.query.tab : 'knowledge'
-  return item.activeTabs.includes(activeTab)
-}
+const isNavItemActive = (item) => isRouteNavItemActive(item, route)
 
 const setSidebarCollapsed = (collapsed) => {
   sidebarCollapsed.value = collapsed
@@ -238,7 +292,11 @@ provide('settingsModal', {
 </script>
 
 <template>
-  <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div
+    class="app-layout"
+    :class="{ 'sidebar-collapsed': sidebarCollapsed, 'sidebar-resizing': isResizingSidebar }"
+    :style="layoutStyle"
+  >
     <div class="header">
       <div class="sidebar-brand" @click.stop>
         <router-link v-if="!sidebarCollapsed" to="/" class="brand-link">
@@ -275,7 +333,7 @@ provide('settingsModal', {
           v-show="!item.hidden"
           class="nav-item"
           :class="{ active: isNavItemActive(item), 'primary-action': item.action }"
-          :active-class="item.action ? '' : 'active'"
+          :active-class="resolveRouterLinkActiveClass(item)"
           @click.stop
         >
           <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
@@ -331,6 +389,16 @@ provide('settingsModal', {
           </UserInfoComponent>
         </div>
       </div>
+      <button
+        v-if="!sidebarCollapsed"
+        type="button"
+        class="sidebar-resize-handle"
+        aria-label="调整侧边栏宽度"
+        @pointerdown="startSidebarResize"
+        @keydown.left.prevent="nudgeSidebarWidth(-sidebarResizeStep)"
+        @keydown.right.prevent="nudgeSidebarWidth(sidebarResizeStep)"
+        @dblclick="resetSidebarWidth"
+      />
     </div>
     <router-view v-slot="{ Component, route }" id="app-router-view">
       <keep-alive v-if="route.meta.keepAlive !== false">
@@ -378,6 +446,14 @@ provide('settingsModal', {
   min-width: var(--min-width);
 }
 
+.app-layout.sidebar-resizing {
+  cursor: col-resize;
+
+  .header {
+    transition: none;
+  }
+}
+
 div.header,
 #app-router-view {
   height: 100%;
@@ -391,6 +467,7 @@ div.header,
 }
 
 .header {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 0 0 @sidebar-width;
@@ -407,6 +484,41 @@ div.header,
   transition:
     width 0.18s ease,
     flex-basis 0.18s ease;
+
+  .sidebar-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    z-index: 3;
+    width: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: col-resize;
+
+    &::after {
+      position: absolute;
+      top: 8px;
+      right: 3px;
+      bottom: 8px;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--main-color);
+      content: '';
+      opacity: 0;
+      transition: opacity 0.16s ease;
+    }
+
+    &:hover::after,
+    &:focus-visible::after {
+      opacity: 1;
+    }
+
+    &:focus-visible {
+      outline: none;
+    }
+  }
 
   .nav {
     display: flex;
@@ -544,7 +656,7 @@ div.header,
 
     .nav-text {
       min-width: 0;
-      max-width: 140px;
+      max-width: calc(var(--sidebar-width) - 74px);
       margin-left: 8px;
       overflow: hidden;
       line-height: 20px;

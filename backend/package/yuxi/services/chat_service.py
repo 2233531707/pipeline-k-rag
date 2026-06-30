@@ -65,8 +65,28 @@ def _build_state_files(attachments: list[dict]) -> dict:
     return files
 
 
-async def _get_langgraph_messages(agent_instance, config_dict):
-    graph = await agent_instance.get_graph()
+def _build_runtime_graph_context(agent_instance, input_context: dict | None):
+    if not input_context:
+        return None
+
+    context_schema = getattr(agent_instance, "context_schema", None)
+    if not callable(context_schema):
+        return None
+
+    context = context_schema()
+    updater = getattr(context, "update_from_dict", None) or getattr(context, "update", None)
+    if callable(updater):
+        updater(dict(input_context))
+        return context
+    return None
+
+
+async def _get_langgraph_messages(agent_instance, config_dict, input_context: dict | None = None):
+    graph_context = _build_runtime_graph_context(agent_instance, input_context)
+    if graph_context is None:
+        graph = await agent_instance.get_graph()
+    else:
+        graph = await agent_instance.get_graph(context=graph_context)
     state = await graph.aget_state(config_dict)
 
     if not state or not state.values:
@@ -446,8 +466,9 @@ async def save_messages_from_langgraph_state(
     conv_repo: ConversationRepository,
     config_dict: dict,
     trace_info: dict[str, Any] | None = None,
+    input_context: dict[str, Any] | None = None,
 ) -> None:
-    messages = await _get_langgraph_messages(agent_instance, config_dict)
+    messages = await _get_langgraph_messages(agent_instance, config_dict, input_context=input_context)
     if messages is None:
         return
 
@@ -856,6 +877,7 @@ async def agent_chat(
                 conv_repo=conv_repo,
                 config_dict=langgraph_config,
                 trace_info=trace_info,
+                input_context=input_context,
             )
         except Exception as e:
             logger.exception(f"Error saving messages from LangGraph state: {e}")
@@ -1149,6 +1171,7 @@ async def stream_agent_chat(
                 conv_repo=conv_repo,
                 config_dict=langgraph_config,
                 trace_info=trace_info,
+                input_context=input_context,
             )
         except Exception as e:
             logger.exception(f"Error saving messages from LangGraph state: {e}")
@@ -1361,6 +1384,7 @@ async def stream_agent_resume(
                 conv_repo=conv_repo,
                 config_dict=langgraph_config,
                 trace_info=trace_info,
+                input_context=input_context,
             )
         except Exception as e:
             logger.exception(f"Error saving messages from LangGraph state: {e}")
