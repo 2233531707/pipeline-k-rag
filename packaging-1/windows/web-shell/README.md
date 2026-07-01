@@ -14,7 +14,7 @@
 ## 构建
 
 ```powershell
-cd packaging/windows/web-shell
+cd packaging-1/windows/web-shell
 pnpm install --no-frozen-lockfile
 pnpm run dist:portable
 ```
@@ -22,5 +22,5 @@ pnpm run dist:portable
 也可以从仓库根目录执行：
 
 ```powershell
-packaging/windows/scripts/build_web_shell_portable.ps1
+packaging-1/windows/scripts/build_web_shell_portable.ps1
 ```

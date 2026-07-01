@@ -5,7 +5,6 @@
 ## 目录
 
 - `electron/`：首版 Electron 客户端工程、打包配置和主进程代码。
-- `web-shell/`：Web 前端应用壳工程，只打开服务器 Web URL，不内置前端静态资源。
 - `scripts/`：Electron 构建脚本。
 - `dist/`：构建产物；不提交到 Git。
 
@@ -26,5 +25,3 @@
 
 - Electron 工程：`packaging/windows/electron/`
 - Windows `portable exe` 构建脚本：`packaging/windows/scripts/build_electron_portable.ps1`
-- Web URL 壳工程：`packaging/windows/web-shell/`
-- Web URL 壳 `portable exe` 构建脚本：`packaging/windows/scripts/build_web_shell_portable.ps1`

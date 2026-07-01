@@ -5,8 +5,8 @@
 ## 交付物
 
 - 后端服务器：继续使用 `docker-compose.prod.yml` 启动 API、Worker、PostgreSQL/PostGIS、Redis、MinIO、Milvus、Neo4j 和沙盒 provisioner。
-- 前端静态包：使用 `packaging/web-static/build-static-package.ps1` 生成版本化 zip，交给外部 Nginx/CDN 解压部署。
-- Web 前端应用壳：使用 `packaging/windows/web-shell/` 构建免安装 Windows `portable exe`，打开服务器上的 Web URL。
+- 前端静态包：使用 `packaging-1/web-static/build-static-package.ps1` 生成版本化 zip，交给外部 Nginx/CDN 解压部署。
+- Web 前端应用壳：使用 `packaging-1/windows/web-shell/` 构建免安装 Windows `portable exe`，打开服务器上的 Web URL。
 
 本方案不把前端静态资源打入 exe 壳，不引入桌面端 token 安全存储，也不让前端直接跨域访问独立 API 域名。
 
@@ -49,13 +49,13 @@ docker compose \
 在 Windows PowerShell 中执行：
 
 ```powershell
-packaging/web-static/build-static-package.ps1
+packaging-1/web-static/build-static-package.ps1
 ```
 
 产物默认输出到：
 
 ```text
-packaging/web-static/dist/yuxi-web-static-<version>-<timestamp>.zip
+packaging-1/web-static/dist/yuxi-web-static-<version>-<timestamp>.zip
 ```
 
 zip 内容包括：
@@ -74,7 +74,7 @@ mkdir -p /var/www/yuxi-web
 unzip yuxi-web-static-*.zip -d /var/www/yuxi-web
 ```
 
-参考 `packaging/web-static/nginx.example.conf` 配置站点：
+参考 `packaging-1/web-static/nginx.example.conf` 配置站点：
 
 ```text
 https://app.example.com/        -> 静态前端
@@ -93,7 +93,7 @@ https://app.example.com/api/... -> 反代到后端 API
 Web 壳只是一个免安装 Electron BrowserWindow URL 壳。构建：
 
 ```powershell
-packaging/windows/scripts/build_web_shell_portable.ps1
+packaging-1/windows/scripts/build_web_shell_portable.ps1
 ```
 
 产物默认输出到：

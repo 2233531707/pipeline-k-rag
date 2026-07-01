@@ -54,9 +54,9 @@
 15. 本轮验收主链路。
    - 已确认：覆盖后端 `docker-compose.prod.yml` 启动 API/Worker/数据服务、外部 Nginx/CDN 部署前端静态 zip 解压内容、同源 `/api` 直接反代后端 API、API 端口仅允许外部 Nginx 访问、浏览器访问 Web 前端、exe 壳启动同一 Web URL、登录/初始化、主智能体对话、上传下载、SSE/流式响应和健康检查；本轮不做知识库管理、图谱管理、后台管理全量验收。
 16. Web 前端应用壳实现目录。
-   - 已确认：新建独立目录承载 URL 壳实现，建议使用 `packaging/windows/web-shell/`，不复用现有 `packaging/windows/electron/`，避免与 Electron 本地前端资源客户端混用。
+   - 已确认：新建独立目录承载 URL 壳实现；后续进一步收敛为放入 `packaging-1/windows/web-shell/`，不复用现有 `packaging/windows/electron/`，避免与 Electron 本地前端资源客户端混用。
 17. 前端静态 zip 构建脚本目录。
-   - 已确认：新建 `packaging/web-static/` 承载前端静态 zip 构建脚本、外部 Nginx 示例配置和静态包说明；它是 Web 部署产物，不绑定 Windows URL 壳。
+   - 已确认：新建 `packaging-1/web-static/` 承载前端静态 zip 构建脚本、外部 Nginx 示例配置和静态包说明；它是 Web 部署产物，不绑定 Windows URL 壳。
 18. 后端服务器部署说明是否进入正式用户文档。
    - 已确认：新增正式文档 `docs/advanced/web-separated-deployment.md`，并同步更新 `docs/.vitepress/config.mts` 导航；该文档作为交付人员可复用的前后端分离部署方案，不只保存在 `docs/vibe` 过程记录中。
 19. 本轮实现完成后是否直接提交并推送。
@@ -74,17 +74,17 @@
 
 ## 本轮落地结果
 
-- 新增 `packaging/web-static/`，用于构建版本化前端静态 zip，并提供外部 Nginx 示例配置。
-- 新增 `packaging/windows/web-shell/`，实现 Electron BrowserWindow Web URL 壳。
-- 新增 `packaging/windows/scripts/build_web_shell_portable.ps1`，用于构建 Web URL 壳 portable exe。
+- 新增 `packaging-1/web-static/`，用于构建版本化前端静态 zip，并提供外部 Nginx 示例配置。
+- 新增 `packaging-1/windows/web-shell/`，实现 Electron BrowserWindow Web URL 壳。
+- 新增 `packaging-1/windows/scripts/build_web_shell_portable.ps1`，用于构建 Web URL 壳 portable exe。
 - 新增正式文档 `docs/advanced/web-separated-deployment.md`，并加入 VitePress 高级配置导航。
 - 更新 `CONTEXT.md`，补充 Web 前后端分离部署、Web 前端应用壳和 Web 前端能力桌面化全量等价三个术语。
 
 ## 验证记录
 
-- `node --check packaging/windows/web-shell/main.js`
-- `node --check packaging/windows/web-shell/preload.js`
-- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging/web-static/build-static-package.ps1 -SkipBuild`
+- `node --check packaging-1/windows/web-shell/main.js`
+- `node --check packaging-1/windows/web-shell/preload.js`
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging-1/web-static/build-static-package.ps1 -SkipBuild`
 - `pnpm --dir docs run build`
-- `pnpm --dir packaging/windows/web-shell run dist:portable`
+- `pnpm --dir packaging-1/windows/web-shell run dist:portable`
 - `git diff --check`
