@@ -99,7 +99,7 @@ packaging-1/windows/scripts/build_web_shell_portable.ps1
 产物默认输出到：
 
 ```text
-packaging/windows/dist/web-shell/
+packaging-1/windows/dist/web-shell/
 ```
 
 交付 zip 时可在 exe 同目录放置 `config.json`：
