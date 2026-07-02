@@ -19,7 +19,11 @@ function readJsonFile(filePath) {
   if (!fs.existsSync(filePath)) {
     return {}
   }
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  } catch {
+    return {}
+  }
 }
 
 function normalizeWebUrl(value) {
@@ -68,8 +72,9 @@ function createWindow() {
     height: DEFAULT_HEIGHT,
     minWidth: 1100,
     minHeight: 720,
-    show: false,
+    show: true,
     autoHideMenuBar: true,
+    backgroundColor: '#f5f7fb',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -81,6 +86,15 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
+    mainWindow.focus()
+  })
+
+  mainWindow.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, validatedURL) => {
+    if (validatedURL.startsWith('file://')) {
+      mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildErrorPage(errorDescription))}`)
+      return
+    }
+    openConfigPage()
   })
 
   loadConfiguredTarget()
@@ -100,6 +114,16 @@ function openConfigPage() {
     return
   }
   mainWindow.loadFile(path.join(__dirname, 'config.html'))
+}
+
+function buildErrorPage(message) {
+  return `<!doctype html>
+<meta charset="utf-8">
+<title>启动失败</title>
+<body style="font-family: Microsoft YaHei, Segoe UI, sans-serif; padding: 32px; background: #f5f7fb; color: #172033;">
+  <h1>启动失败</h1>
+  <p>无法加载本地配置页：${String(message || '未知错误')}</p>
+</body>`
 }
 
 function buildMenu() {
