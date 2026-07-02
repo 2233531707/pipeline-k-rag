@@ -11,4 +11,6 @@
 ## 构建入口
 
 - 前端静态 zip：`packaging-1/web-static/build-static-package.ps1`
-- Web URL 壳 portable exe：`packaging-1/windows/scripts/build_web_shell_portable.ps1`
+- Web 前端 exe 交付 zip：`packaging-1/windows/scripts/build_web_shell_portable.ps1`
+
+`build_web_shell_portable.ps1` 会生成可直接交付的 zip。用户解压后，当前目录下会直接出现 `地下管网知识模型数据库 Web 入口.exe`，无需安装，也无需再次构建。

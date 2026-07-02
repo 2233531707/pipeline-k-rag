@@ -24,3 +24,5 @@ pnpm run dist:portable
 ```powershell
 packaging-1/windows/scripts/build_web_shell_portable.ps1
 ```
+
+脚本会在 `packaging-1/windows/dist/` 下生成可直接交付的 zip。用户解压后，当前目录下会直接出现前端 exe。

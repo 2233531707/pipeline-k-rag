@@ -96,13 +96,21 @@ Web 壳只是一个免安装 Electron BrowserWindow URL 壳。构建：
 packaging-1/windows/scripts/build_web_shell_portable.ps1
 ```
 
-产物默认输出到：
+最终交付 zip 默认输出到：
 
 ```text
-packaging-1/windows/dist/web-shell/
+packaging-1/windows/dist/yuxi-web-frontend-exe-<version>.zip
 ```
 
-交付 zip 时可在 exe 同目录放置 `config.json`：
+该 zip 解压后，当前目录下会直接出现：
+
+```text
+地下管网知识模型数据库 Web 入口.exe
+README.txt
+config.sample.json
+```
+
+如需预置服务器地址，可复制 `config.sample.json` 为 exe 同目录的 `config.json`：
 
 ```json
 {
